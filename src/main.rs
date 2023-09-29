@@ -72,7 +72,7 @@ impl Server {
 fn main() {
     let matches = App::new("Lan Chat")
         .version("1.0")
-        .author("Your Name")
+        .author("Saphereye")
         .about("A LAN chat application")
         .subcommand(
             App::new("server").about("Run as server").arg(
