@@ -98,19 +98,12 @@ fn run_server(server_ip: &str) {
                 if len == 0 {
                     break;
                 }
-                match String::from_utf8_lossy(&buffer).as_ref() {
-                    "/quit" => {
-                        server.remove_client(&client_addr);
-                    }
-                    _ => {}
+
+                if String::from_utf8_lossy(&buffer).as_ref() == "/quit" {
+                    server.remove_client(&client_addr);
                 }
-                // println!(
-                //     "Got this in the buffer yo: {}",
-                //     String::from_utf8_lossy(&buffer)
-                // );
+
                 server.broadcast(&buffer[..len], &client_addr);
-                // Send a response back to the client
-                // stream.write_all(b"Message received by server").unwrap();
             }
 
             server.remove_client(&client_addr);
@@ -155,15 +148,12 @@ fn run_client(server_ip: &str) {
             .expect("Failed to read input");
         let message = message.trim(); // Remove trailing newline
 
-        stream.write(message.as_bytes()).unwrap();
+        stream.write_all(message.as_bytes()).unwrap();
         // thread::sleep(Duration::from_secs(5));
         stream.flush().unwrap();
 
-        match message {
-            "/quit" => {
-                break;
-            }
-            _ => {}
+        if message == "/quit" {
+            break;
         }
     }
 }
