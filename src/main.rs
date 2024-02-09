@@ -1,8 +1,9 @@
+use anyhow::{anyhow, Result};
 use std::io::{Read, Write};
-use std::net::TcpListener;
 use std::net::TcpStream;
+use std::net::{IpAddr, TcpListener};
 use std::sync::{Arc, Mutex};
-use std::thread;
+use std::{any, thread};
 
 extern crate clap;
 use clap::{App, Arg};
@@ -69,6 +70,18 @@ impl Server {
     }
 }
 
+fn get_local_ip() -> Result<String> {
+    if let Ok(interfaces) = get_if_addrs() {
+        if let IpAddr::V4(ipv4) = interfaces[1].ip() {
+            return Ok(ipv4.to_string());
+        } else {
+            return Err(anyhow!("Failed to retrieve local IP address."));
+        }
+    } else {
+        return Err(anyhow!("Failed to retrieve network interface information."));
+    }
+}
+
 fn main() {
     let matches = App::new("Lan Chat")
         .version("1.0")
@@ -78,7 +91,7 @@ fn main() {
             App::new("server").about("Run as server").arg(
                 Arg::with_name("server-ip")
                     .long("server-ip")
-                    .takes_value(true),
+                    .takes_value(false),
             ),
         )
         .subcommand(
@@ -93,18 +106,32 @@ fn main() {
 
     if let Some(server_matches) = matches.subcommand_matches("server") {
         // User wants to start the server
-        let server_ip = server_matches.value_of("server-ip").unwrap_or("127.0.0.1");
-        run_server(server_ip);
+        let server_ip = match server_matches.value_of("server-ip") {
+            Some(ip) => ip.to_string(),
+            None => match get_local_ip() {
+                Ok(ip) => ip,
+                Err(e) => {
+                    eprintln!("Failed to retrieve local IP address: {}", e);
+                    return;
+                }
+            },
+        };
+        run_server(&server_ip);
     } else if let Some(server_matches) = matches.subcommand_matches("client") {
         // User wants to start the server
-        let server_ip = server_matches.value_of("server-ip").unwrap_or("127.0.0.1");
-        run_client(server_ip);
+        let server_ip = match server_matches.value_of("server-ip") {
+            Some(ip) => ip.to_string(),
+            None => {
+                eprintln!("Server IP address is required.");
+                return;
+            }
+        };
+        run_client(&server_ip);
     } else if matches.subcommand_matches("get-ip").is_some() {
         // User wants to get their local IP address
-        if let Ok(interfaces) = get_if_addrs() {
-            println!("{:#?}", interfaces);
-        } else {
-            println!("Failed to retrieve network interface information.");
+        match get_local_ip() {
+            Ok(ip) => println!("Your local IP address is: {}", ip),
+            Err(e) => eprintln!("Failed to retrieve local IP address: {}", e),
         }
     } else {
         println!("Usage: lan-chat <server/get-ip> or lan-chat get-ip");
@@ -115,7 +142,9 @@ fn run_server(server_ip: &str) {
     println!("Initializing server");
     let server = Server::new();
 
-    let listener = TcpListener::bind(server_ip).unwrap();
+    let listener = TcpListener::bind(format!("{server_ip}:0")).unwrap();
+    println!("Server listening on {}", listener.local_addr().unwrap());
+
     for stream in listener.incoming() {
         let mut stream = stream.unwrap();
         let server = server.clone();
