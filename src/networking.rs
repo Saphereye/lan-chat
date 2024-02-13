@@ -1,4 +1,4 @@
-use std::io::{Read, Write};
+use std::io::{self, Read, Write};
 use std::net::TcpStream;
 use std::net::{IpAddr, TcpListener};
 use std::process::{exit, ExitCode};
@@ -6,11 +6,11 @@ use std::sync::{Arc, Mutex};
 use std::{error, thread};
 extern crate if_addrs;
 use if_addrs::get_if_addrs;
-use serde::{Deserialize, Serialize};
 use log::*;
+use serde::{Deserialize, Serialize};
 
 /// A message that can be sent between clients and the server.
-/// 
+///
 /// The numerous types of messages are categorized to help display the same in a better manner.
 /// Info, Leave, Error and Command (in progress) just need the text
 /// Message requires the content and the sender information
@@ -85,17 +85,19 @@ impl Server {
     }
 }
 
-// pub fn get_local_ip() -> Result<String> {
-//     if let Ok(interfaces) = get_if_addrs() {
-//         if let IpAddr::V4(ipv4) = interfaces[1].ip() {
-//             Ok(ipv4.to_string())
-//         } else {
-//             Err(anyhow!("Failed to retrieve local IP address."))
-//         }
-//     } else {
-//         Err(anyhow!("Failed to retrieve network interface information."))
-//     }
-// }
+pub fn get_local_ip() -> io::Result<String> {
+    if let Ok(interfaces) = get_if_addrs() {
+        for interface in interfaces {
+            if let IpAddr::V4(ipv4) = interface.ip() {
+                return Ok(ipv4.to_string());
+            }
+        }
+    }
+    Err(io::Error::new(
+        io::ErrorKind::Other,
+        "Failed to retrieve local IP address.",
+    ))
+}
 
 /// Runs the server. The server listens for incoming connections and spawns a new thread for each one.
 pub fn run_server(server_ip: &str) {
@@ -157,7 +159,8 @@ pub fn run_server(server_ip: &str) {
 
 /// Responsible for sending a message given stream and message enum
 pub fn send_message(stream: &mut TcpStream, message: &Message) -> std::io::Result<()> {
-    let bytes = bincode::serialize(&message).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    let bytes = bincode::serialize(&message)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
     stream.write_all(&bytes);
     stream.flush()
 }
@@ -205,7 +208,10 @@ pub fn run_client(stream: &mut TcpStream, message_vector: Arc<Mutex<Vec<Message>
     ));
     // make a lot of black lines after this
     for _ in 0..2 {
-        message_vector.lock().unwrap().push(Message::Info("".to_string()));
+        message_vector
+            .lock()
+            .unwrap()
+            .push(Message::Info("".to_string()));
     }
 
     // Spawn a thread to read messages from the server

@@ -5,14 +5,14 @@
 //! The chat application uses a terminal based interface to allow usage even in the absence of a GUI.
 
 extern crate clap;
-use clap::{App, Arg};
+use clap::Parser;
 mod networking;
+use env_logger::Builder;
+use log::*;
 use networking::*;
 use std::io::{self, stdout};
 use std::net::TcpStream;
 use std::sync::{Arc, Mutex};
-use log::*;
-use env_logger::Builder;
 
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
@@ -21,47 +21,60 @@ use crossterm::{
 use ratatui::{prelude::*, widgets::*};
 use tui_textarea::{Input, Key, TextArea};
 
+/// The main function of the application. It is responsible for parsing the command line arguments and starting the server or client based on the arguments.
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    /// Boolean to indicate if the application should start the server or the client.
+    #[arg(short, long)]
+    is_server: bool,
+    /// The IP address of the server to connect to.
+    #[arg(short, long, default_value = "")]
+    server_ip: String,
+}
+
 fn main() -> io::Result<()> {
-    Builder::new()
-        .filter(None, LevelFilter::Info)
-        .init();
-    let args: Vec<String> = std::env::args().collect();
+    Builder::new().filter(None, LevelFilter::Info).init();
+
+    let args = Args::parse();
     let message_vector: Arc<Mutex<Vec<Message>>> = Arc::new(Mutex::new(Vec::new()));
     let message_vector_clone = Arc::clone(&message_vector);
 
-    if args.contains(&"server".to_string()) {
-        run_server("172.16.50.209");
-    } else if args.len() > 1 {
-        let server_ip = args[1].clone();
-        let mut stream = TcpStream::connect(server_ip).unwrap();
-        let mut stream_clone = stream.try_clone().unwrap();
-        std::thread::spawn(move || {
-            run_client(&mut stream, message_vector_clone);
-        });
-
-        enable_raw_mode()?;
-        crossterm::execute!(stdout(), EnterAlternateScreen, EnableMouseCapture)?;
-        let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
-        terminal.show_cursor()?;
-        let mut text_area = TextArea::default();
-        text_area.set_cursor_line_style(Style::default());
-        text_area.set_placeholder_text("Enter message here");
-
-        let mut should_quit = false;
-        while !should_quit {
-            terminal.draw(|f| ui(f, Arc::clone(&message_vector), &mut text_area))?;
-            should_quit = handle_events(&mut text_area, &mut stream_clone)?;
-        }
-
-        disable_raw_mode()?;
-        crossterm::execute!(
-            terminal.backend_mut(),
-            LeaveAlternateScreen,
-            DisableMouseCapture
-        )?;
-        terminal.show_cursor()?;
+    if args.is_server {
+        run_server(get_local_ip().unwrap().as_str());
     } else {
-        panic!("Please provide a server IP address");
+        if args.server_ip != "" {
+            let server_ip = args.server_ip;
+            let mut stream = TcpStream::connect(server_ip).unwrap();
+            let mut stream_clone = stream.try_clone().unwrap();
+            std::thread::spawn(move || {
+                run_client(&mut stream, message_vector_clone);
+            });
+
+            enable_raw_mode()?;
+            crossterm::execute!(stdout(), EnterAlternateScreen, EnableMouseCapture)?;
+            let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
+            terminal.show_cursor()?;
+            let mut text_area = TextArea::default();
+            text_area.set_cursor_line_style(Style::default());
+            text_area.set_placeholder_text("Enter message here");
+
+            let mut should_quit = false;
+            while !should_quit {
+                terminal.draw(|f| ui(f, Arc::clone(&message_vector), &mut text_area))?;
+                should_quit = handle_events(&mut text_area, &mut stream_clone)?;
+            }
+
+            disable_raw_mode()?;
+            crossterm::execute!(
+                terminal.backend_mut(),
+                LeaveAlternateScreen,
+                DisableMouseCapture
+            )?;
+            terminal.show_cursor()?;
+        } else {
+            panic!("Please provide a server IP address");
+        }
     }
 
     Ok(())
