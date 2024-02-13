@@ -94,7 +94,7 @@ pub fn run_server(server_ip: &str) {
     let listener = TcpListener::bind(format!("{server_ip}:0")).unwrap();
     println!("Server listening on {}", listener.local_addr().unwrap());
     println!(
-        "To join the chat, use the following command: lan-chat client --server-ip {}",
+        "To join the chat, use the following command: lan-chat {}",
         listener.local_addr().unwrap()
     );
     println!(
