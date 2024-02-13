@@ -1,13 +1,12 @@
 [package]
 name = "lan-chat"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2021"
 authors = ["Sapherye <adarshdas950@gmail.com>"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-anyhow = "1.0.79"
 clap = "2.33"
 crossterm = "0.27.0"
 if-addrs = "0.10.1"

@@ -1,10 +1,8 @@
-use anyhow::{anyhow, Result};
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::net::{IpAddr, TcpListener};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
 extern crate if_addrs;
 use if_addrs::get_if_addrs;
 use serde::{Deserialize, Serialize};
@@ -31,7 +29,6 @@ impl Server {
     }
 
     fn add_client(&self, client: TcpStream, addr: String) {
-        let mut client_stream = client.try_clone().unwrap();
         let mut clients = self.clients.lock().unwrap();
         let addr_clone = addr.clone();
         clients.push((client, addr));
@@ -50,7 +47,7 @@ impl Server {
         // println!("In broadcast: {:?}", clients);
         match message {
             Message::Message(sender_addr, ref message_string) => {
-                for (client, receiver_addr) in clients.iter_mut() {
+                for (client, _) in clients.iter_mut() {
                     send_message(client, &message).unwrap();
                 }
                 println!("({}): {}", sender_addr, message_string);
@@ -154,7 +151,12 @@ pub fn send_message(stream: &mut TcpStream, message: &Message) -> std::io::Resul
 
 fn receive_message(stream: &mut TcpStream) -> std::io::Result<Message> {
     let mut buffer = [0; 1024];
-    stream.read(&mut buffer)?;
+    match stream.read(&mut buffer) {
+        Ok(_) => {}
+        Err(e) => {
+            return Err(e);
+        }
+    }
     let message: Message = bincode::deserialize(&buffer).unwrap();
     Ok(message)
 }

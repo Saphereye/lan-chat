@@ -1,7 +1,6 @@
 extern crate clap;
 use clap::{App, Arg};
 mod networking;
-use crossterm::style::Stylize;
 use networking::*;
 use std::io::{self, stdout};
 use std::net::TcpStream;
@@ -10,7 +9,6 @@ use std::sync::{Arc, Mutex};
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-    ExecutableCommand,
 };
 use ratatui::{prelude::*, widgets::*};
 use tui_textarea::{Input, Key, TextArea};
@@ -41,11 +39,7 @@ fn main() -> io::Result<()> {
         let mut should_quit = false;
         while !should_quit {
             terminal.draw(|f| ui(f, Arc::clone(&message_vector), &mut text_area))?;
-            should_quit = handle_events(
-                Arc::clone(&message_vector),
-                &mut text_area,
-                &mut stream_clone,
-            )?;
+            should_quit = handle_events(&mut text_area, &mut stream_clone)?;
         }
 
         disable_raw_mode()?;
@@ -62,11 +56,7 @@ fn main() -> io::Result<()> {
     Ok(())
 }
 
-fn handle_events(
-    message_vector: Arc<Mutex<Vec<Message>>>,
-    text_area: &mut TextArea,
-    stream: &mut TcpStream,
-) -> io::Result<bool> {
+fn handle_events(text_area: &mut TextArea, stream: &mut TcpStream) -> io::Result<bool> {
     if event::poll(std::time::Duration::from_millis(50))? {
         if let Event::Key(key) = event::read()? {
             if key.kind == event::KeyEventKind::Press {
@@ -75,7 +65,7 @@ fn handle_events(
                         send_message(
                             stream,
                             &Message::Leave(stream.local_addr().unwrap().to_string()),
-                        );
+                        )?;
                         return Ok(true);
                     }
                     KeyCode::Enter => {
@@ -83,8 +73,10 @@ fn handle_events(
                         send_message(
                             stream,
                             &Message::Message(stream.local_addr().unwrap().to_string(), message),
-                        );
-                        text_area.delete_line_by_end();
+                        )?;
+                        while !text_area.is_empty() {
+                            text_area.delete_char();
+                        }
                     }
                     ref key_code => {
                         // Handle other keys
@@ -115,7 +107,7 @@ fn ui(frame: &mut Frame, message_vector: Arc<Mutex<Vec<Message>>>, text_area: &m
             Message::Leave(leave) => {
                 let formatted_leave = format!("{} has left the chat", leave);
                 Span::styled(formatted_leave, Style::default().fg(Color::Yellow))
-            },
+            }
             Message::Message(source, message) => {
                 let formatted_message = format!("({}): {}", source, message);
                 Span::styled(formatted_message, Style::default().fg(Color::White))
@@ -143,7 +135,8 @@ fn ui(frame: &mut Frame, message_vector: Arc<Mutex<Vec<Message>>>, text_area: &m
 
     // Display the messages on the screen
     frame.render_widget(
-        Paragraph::new(message_lines).scroll((scroll as u16, 0))
+        Paragraph::new(message_lines)
+            .scroll((scroll as u16, 0))
             .block(Block::default().title("Lan Chat 💬").borders(Borders::ALL)),
         chunks[0],
     );
