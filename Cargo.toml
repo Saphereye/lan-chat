@@ -1,8 +1,13 @@
 [package]
 name = "lan-chat"
-version = "0.5.1"
+version = "0.5.2"
 edition = "2021"
 authors = ["Sapherye <adarshdas950@gmail.com>"]
+license = "MIT"
+description = "A terminal based chatting application with a terminal user interface"
+keywords = ["terminal", "chat", "tcp"]
+categories = ["command-line-utilities"]
+
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
