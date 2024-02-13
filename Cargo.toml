@@ -7,6 +7,12 @@ license = "MIT"
 description = "A terminal based chatting application with a terminal user interface"
 keywords = ["terminal", "chat", "tcp"]
 categories = ["command-line-utilities"]
+exclude = [
+    ".github/workflows/rust.yml",
+    ".gitignore",
+    "LICENSE",
+    "README.md",
+]
 
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
