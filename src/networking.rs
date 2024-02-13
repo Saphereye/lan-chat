@@ -7,6 +7,14 @@ use std::thread;
 extern crate if_addrs;
 use if_addrs::get_if_addrs;
 
+pub enum Message {
+    Info (String),
+    Leave(String),
+    Message(String),
+    Error(String),
+    Command(String),
+}
+
 #[derive(Clone)]
 struct Server {
     clients: Arc<Mutex<Vec<(TcpStream, String)>>>,
@@ -78,16 +86,17 @@ pub fn get_local_ip() -> Result<String> {
 }
 
 pub fn run_server(server_ip: &str) {
-    println!("Initializing server");
+    // println!("Initializing server");
     let server = Server::new();
 
+    // let listener = TcpListener::bind(format!("{server_ip}:0")).unwrap();
     let listener = TcpListener::bind(format!("{server_ip}:0")).unwrap();
     println!("Server listening on {}", listener.local_addr().unwrap());
     println!(
         "To join the chat, use the following command: lan-chat client --server-ip {}",
         listener.local_addr().unwrap()
     );
-    println!("Running program version {}. Created by Saphereye <adarshdas950@gmail.com>", env!("CARGO_PKG_VERSION"));
+    println!("Running program version {}. Created by {}", env!("CARGO_PKG_VERSION"), env!("CARGO_PKG_AUTHORS"));
 
     for stream in listener.incoming() {
         let mut stream = stream.unwrap();
@@ -114,22 +123,22 @@ pub fn run_server(server_ip: &str) {
     }
 }
 
-pub fn run_client(server_ip: &str) {
+pub fn run_client(server_ip: &str, message_vector: Arc<Mutex<Vec<Message>>>) {
     let mut stream = TcpStream::connect(server_ip).unwrap();
     if let Ok(s) = stream.local_addr() {
-        println!("Your ip is: {}", s);
+        message_vector.lock().unwrap().push(Message::Info(format!("Your ip is: {}", s)));
     };
 
     // Print the server's address
     match stream.peer_addr() {
         Ok(addr) => {
-            println!("Connected to server at address: {}", addr);
+            message_vector.lock().unwrap().push(Message::Info(format!("Connected to server at address: {}", addr)));
         }
         Err(e) => {
-            eprintln!("Failed to retrieve server address: {}", e);
+            message_vector.lock().unwrap().push(Message::Error(format!("Failed to retrieve server address: {}", e)));
         }
     }
-    println!("To quit the chat, type /quit and press enter");
+    message_vector.lock().unwrap().push(Message::Info("To quit the chat, type /quit and press enter".to_string()));
 
     // Spawn a thread to read messages from the server
     let mut server_stream = stream.try_clone().unwrap();
@@ -139,25 +148,42 @@ pub fn run_client(server_ip: &str) {
             if len == 0 {
                 break;
             }
-            println!("{}", String::from_utf8_lossy(&buffer[..len]));
+            message_vector.lock().unwrap().push(Message::Message(String::from_utf8_lossy(&buffer[..len]).to_string()));
         }
     });
 
-    loop {
-        // Read the message from user input
-        // print!("Enter a message to send to the server:");
-        let mut message = String::new();
-        std::io::stdin()
-            .read_line(&mut message)
-            .expect("Failed to read input");
-        let message = message.trim(); // Remove trailing newline
+    // loop {
+    //     // Read the message from user input
+    //     // print!("Enter a message to send to the server:");
+    //     let mut message = String::new();
+    //     std::io::stdin()
+    //         .read_line(&mut message)
+    //         .expect("Failed to read input");
+    //     let message = message.trim(); // Remove trailing newline
 
-        stream.write_all(message.as_bytes()).unwrap();
-        // thread::sleep(Duration::from_secs(5));
-        stream.flush().unwrap();
+    //     stream.write_all(message.as_bytes()).unwrap();
+    //     // thread::sleep(Duration::from_secs(5));
+    //     stream.flush().unwrap();
 
-        if message == "/quit" {
-            break;
+    //     if message == "/quit" {
+    //         break;
+    //     }
+    // }
+}
+
+pub fn send_message_from_client(message: Message, server_ip: &str) {
+    let mut stream = TcpStream::connect(server_ip).unwrap();
+    match message {
+        Message::Leave(s) => {
+            std::process::exit(0);
         }
+        Message::Message(s) => {
+            stream.write_all(s.as_bytes()).unwrap();
+        }
+        Message::Command(s) => {
+            stream.write_all(s.as_bytes()).unwrap();
+        }
+        _ => unimplemented!("This message type is not supported to be used by client directly.")
     }
+    stream.flush().unwrap();
 }
