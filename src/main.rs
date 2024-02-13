@@ -1,3 +1,9 @@
+//! A simple chat application.
+//!
+//! The application uses a client-server model where many clients are connected to a single server.
+//! When the user sends a message to server using TCP, its broadcasted to all the connected clients.
+//! The chat application uses a terminal based interface to allow usage even in the absence of a GUI.
+
 extern crate clap;
 use clap::{App, Arg};
 mod networking;
@@ -5,6 +11,8 @@ use networking::*;
 use std::io::{self, stdout};
 use std::net::TcpStream;
 use std::sync::{Arc, Mutex};
+use log::*;
+use env_logger::Builder;
 
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
@@ -14,6 +22,9 @@ use ratatui::{prelude::*, widgets::*};
 use tui_textarea::{Input, Key, TextArea};
 
 fn main() -> io::Result<()> {
+    Builder::new()
+        .filter(None, LevelFilter::Info)
+        .init();
     let args: Vec<String> = std::env::args().collect();
     let message_vector: Arc<Mutex<Vec<Message>>> = Arc::new(Mutex::new(Vec::new()));
     let message_vector_clone = Arc::clone(&message_vector);
@@ -56,6 +67,7 @@ fn main() -> io::Result<()> {
     Ok(())
 }
 
+/// Handles the events for the UI. Returns true if the user wants to quit the application.
 fn handle_events(text_area: &mut TextArea, stream: &mut TcpStream) -> io::Result<bool> {
     if event::poll(std::time::Duration::from_millis(50))? {
         if let Event::Key(key) = event::read()? {
@@ -95,6 +107,7 @@ fn handle_events(text_area: &mut TextArea, stream: &mut TcpStream) -> io::Result
     Ok(false)
 }
 
+/// Responsible for drawing the UI. Interfaces with the message vector of the screen.
 fn ui(frame: &mut Frame, message_vector: Arc<Mutex<Vec<Message>>>, text_area: &mut TextArea) {
     // Lock the Mutex and get a reference to the Vec<Message>
     let messages = message_vector.lock().unwrap();
