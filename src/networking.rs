@@ -4,13 +4,16 @@ use std::net::TcpStream;
 use std::net::{IpAddr, TcpListener};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Duration;
 extern crate if_addrs;
 use if_addrs::get_if_addrs;
+use serde::{Deserialize, Serialize};
 
+#[derive(Serialize, Deserialize)]
 pub enum Message {
-    Info (String),
+    Info(String),
     Leave(String),
-    Message(String),
+    Message(String, String), // Source and the message itself
     Error(String),
     Command(String),
 }
@@ -28,6 +31,7 @@ impl Server {
     }
 
     fn add_client(&self, client: TcpStream, addr: String) {
+        let mut client_stream = client.try_clone().unwrap();
         let mut clients = self.clients.lock().unwrap();
         let addr_clone = addr.clone();
         clients.push((client, addr));
@@ -37,25 +41,25 @@ impl Server {
         let join_message = format!("{} has entered the chat.", addr_clone);
         for (existing_client, _) in &*clients {
             let mut existing_client = existing_client.try_clone().unwrap();
-            existing_client.write_all(join_message.as_bytes()).unwrap();
+            send_message(&mut existing_client, &Message::Info(join_message.clone())).unwrap();
         }
     }
 
-    fn broadcast(&self, message: &[u8], sender_addr: &str) {
-        let clients = self.clients.lock().unwrap();
+    fn broadcast(&self, message: &Message) {
+        let mut clients = self.clients.lock().unwrap();
         // println!("In broadcast: {:?}", clients);
-        for (client, receiver_addr) in &*clients {
-            if receiver_addr != sender_addr {
-                let mut client = client;
-                client
-                    .write_all(
-                        format!("({}): {}", sender_addr, String::from_utf8_lossy(message))
-                            .as_bytes(),
-                    )
-                    .unwrap();
+        match message {
+            Message::Message(sender_addr, ref message_string) => {
+                for (client, receiver_addr) in clients.iter_mut() {
+                    send_message(client, &message).unwrap();
+                }
+                println!("({}): {}", sender_addr, message_string);
             }
+            Message::Leave(addr) => {
+                self.remove_client(&addr);
+            }
+            _ => {}
         }
-        println!("({}): {}", sender_addr, String::from_utf8_lossy(message));
     }
 
     fn remove_client(&self, addr: &str) {
@@ -65,25 +69,25 @@ impl Server {
             clients.remove(index);
             // Notify all clients about the departure
             for (client, _) in &mut *clients {
-                let leave_message = format!("{} has left the chat.", addr);
-                let _ = client.write_all(leave_message.as_bytes());
+                send_message(client, &Message::Leave(addr.to_string())).unwrap();
+                client.flush().unwrap();
             }
         }
         println!("{} has left the chat.", addr);
     }
 }
 
-pub fn get_local_ip() -> Result<String> {
-    if let Ok(interfaces) = get_if_addrs() {
-        if let IpAddr::V4(ipv4) = interfaces[1].ip() {
-            return Ok(ipv4.to_string());
-        } else {
-            return Err(anyhow!("Failed to retrieve local IP address."));
-        }
-    } else {
-        return Err(anyhow!("Failed to retrieve network interface information."));
-    }
-}
+// pub fn get_local_ip() -> Result<String> {
+//     if let Ok(interfaces) = get_if_addrs() {
+//         if let IpAddr::V4(ipv4) = interfaces[1].ip() {
+//             Ok(ipv4.to_string())
+//         } else {
+//             Err(anyhow!("Failed to retrieve local IP address."))
+//         }
+//     } else {
+//         Err(anyhow!("Failed to retrieve network interface information."))
+//     }
+// }
 
 pub fn run_server(server_ip: &str) {
     // println!("Initializing server");
@@ -96,7 +100,11 @@ pub fn run_server(server_ip: &str) {
         "To join the chat, use the following command: lan-chat client --server-ip {}",
         listener.local_addr().unwrap()
     );
-    println!("Running program version {}. Created by {}", env!("CARGO_PKG_VERSION"), env!("CARGO_PKG_AUTHORS"));
+    println!(
+        "Running program version {}. Created by {}",
+        env!("CARGO_PKG_VERSION"),
+        env!("CARGO_PKG_AUTHORS")
+    );
 
     for stream in listener.incoming() {
         let mut stream = stream.unwrap();
@@ -105,50 +113,88 @@ pub fn run_server(server_ip: &str) {
         server.add_client(stream.try_clone().unwrap(), client_addr.clone());
         thread::spawn(move || {
             let server = server.clone();
-            let mut buffer = [0; 512];
-            while let Ok(len) = stream.read(&mut buffer) {
-                if len == 0 {
-                    break;
+            while let Ok(message) = receive_message(&mut stream) {
+                match message {
+                    Message::Leave(addr) => {
+                        server.remove_client(&addr);
+                    }
+                    Message::Message(_, _) => {
+                        server.broadcast(&message);
+                    }
+                    _ => {}
                 }
-
-                if String::from_utf8_lossy(&buffer).as_ref() == "/quit" {
-                    server.remove_client(&client_addr);
-                }
-
-                server.broadcast(&buffer[..len], &client_addr);
             }
-
             server.remove_client(&client_addr);
         });
     }
 }
 
-pub fn run_client(server_ip: &str, message_vector: Arc<Mutex<Vec<Message>>>) {
-    let mut stream = TcpStream::connect(server_ip).unwrap();
+// fn get_nickname(stream: &mut TcpStream) -> std::io::Result<String> {
+//     // Set a read timeout to prevent hanging if the client does not respond.
+//     // stream.set_read_timeout(Some(Duration::from_secs(30)))?;
+
+//     // Ask the client for their nickname.
+//     stream.write_all(b"Enter your nickname: ")?;
+
+//     // Read the response.
+//     let mut buffer = Vec::new();
+//     stream.read_to_end(&mut buffer)?;
+
+//     // Convert the response to a string.
+//     let nickname = String::from_utf8_lossy(&buffer).trim().to_string();
+
+//     Ok(nickname)
+// }
+
+pub fn send_message(stream: &mut TcpStream, message: &Message) -> std::io::Result<()> {
+    let bytes = bincode::serialize(&message).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    stream.write_all(&bytes);
+    stream.flush()
+}
+
+fn receive_message(stream: &mut TcpStream) -> std::io::Result<Message> {
+    let mut buffer = [0; 1024];
+    stream.read(&mut buffer)?;
+    let message: Message = bincode::deserialize(&buffer).unwrap();
+    Ok(message)
+}
+
+pub fn run_client(stream: &mut TcpStream, message_vector: Arc<Mutex<Vec<Message>>>) {
     if let Ok(s) = stream.local_addr() {
-        message_vector.lock().unwrap().push(Message::Info(format!("Your ip is: {}", s)));
+        message_vector
+            .lock()
+            .unwrap()
+            .push(Message::Info(format!("Your ip is: {}", s)));
     };
 
     // Print the server's address
     match stream.peer_addr() {
         Ok(addr) => {
-            message_vector.lock().unwrap().push(Message::Info(format!("Connected to server at address: {}", addr)));
+            message_vector.lock().unwrap().push(Message::Info(format!(
+                "Connected to server at address: {}",
+                addr
+            )));
         }
         Err(e) => {
-            message_vector.lock().unwrap().push(Message::Error(format!("Failed to retrieve server address: {}", e)));
+            panic!("Failed to retrieve server address: {}", e);
         }
     }
-    message_vector.lock().unwrap().push(Message::Info("To quit the chat, type /quit and press enter".to_string()));
+    message_vector.lock().unwrap().push(Message::Info(
+        "To quit the chat, type /quit and press enter".to_string(),
+    ));
+    message_vector.lock().unwrap().push(Message::Info(
+        "To send a message, type your message and press enter".to_string(),
+    ));
+    // make a lot of black lines after this
+    for _ in 0..2 {
+        message_vector.lock().unwrap().push(Message::Info("".to_string()));
+    }
 
     // Spawn a thread to read messages from the server
     let mut server_stream = stream.try_clone().unwrap();
     thread::spawn(move || {
-        let mut buffer = [0; 512];
-        while let Ok(len) = server_stream.read(&mut buffer) {
-            if len == 0 {
-                break;
-            }
-            message_vector.lock().unwrap().push(Message::Message(String::from_utf8_lossy(&buffer[..len]).to_string()));
+        while let Ok(message) = receive_message(&mut server_stream) {
+            message_vector.lock().unwrap().push(message);
         }
     });
 
@@ -169,21 +215,4 @@ pub fn run_client(server_ip: &str, message_vector: Arc<Mutex<Vec<Message>>>) {
     //         break;
     //     }
     // }
-}
-
-pub fn send_message_from_client(message: Message, server_ip: &str) {
-    let mut stream = TcpStream::connect(server_ip).unwrap();
-    match message {
-        Message::Leave(s) => {
-            std::process::exit(0);
-        }
-        Message::Message(s) => {
-            stream.write_all(s.as_bytes()).unwrap();
-        }
-        Message::Command(s) => {
-            stream.write_all(s.as_bytes()).unwrap();
-        }
-        _ => unimplemented!("This message type is not supported to be used by client directly.")
-    }
-    stream.flush().unwrap();
 }
