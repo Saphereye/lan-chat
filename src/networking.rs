@@ -1,9 +1,8 @@
 use std::io::{self, Read, Write};
 use std::net::TcpStream;
 use std::net::{IpAddr, TcpListener};
-use std::process::{exit, ExitCode};
 use std::sync::{Arc, Mutex};
-use std::{error, thread};
+use std::thread;
 extern crate if_addrs;
 use if_addrs::get_if_addrs;
 use log::*;
@@ -140,28 +139,11 @@ pub fn run_server(server_ip: &str) {
     }
 }
 
-// fn get_nickname(stream: &mut TcpStream) -> std::io::Result<String> {
-//     // Set a read timeout to prevent hanging if the client does not respond.
-//     // stream.set_read_timeout(Some(Duration::from_secs(30)))?;
-
-//     // Ask the client for their nickname.
-//     stream.write_all(b"Enter your nickname: ")?;
-
-//     // Read the response.
-//     let mut buffer = Vec::new();
-//     stream.read_to_end(&mut buffer)?;
-
-//     // Convert the response to a string.
-//     let nickname = String::from_utf8_lossy(&buffer).trim().to_string();
-
-//     Ok(nickname)
-// }
-
 /// Responsible for sending a message given stream and message enum
 pub fn send_message(stream: &mut TcpStream, message: &Message) -> std::io::Result<()> {
     let bytes = bincode::serialize(&message)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-    stream.write_all(&bytes);
+    stream.write_all(&bytes)?;
     stream.flush()
 }
 
@@ -221,22 +203,4 @@ pub fn run_client(stream: &mut TcpStream, message_vector: Arc<Mutex<Vec<Message>
             message_vector.lock().unwrap().push(message);
         }
     });
-
-    // loop {
-    //     // Read the message from user input
-    //     // print!("Enter a message to send to the server:");
-    //     let mut message = String::new();
-    //     std::io::stdin()
-    //         .read_line(&mut message)
-    //         .expect("Failed to read input");
-    //     let message = message.trim(); // Remove trailing newline
-
-    //     stream.write_all(message.as_bytes()).unwrap();
-    //     // thread::sleep(Duration::from_secs(5));
-    //     stream.flush().unwrap();
-
-    //     if message == "/quit" {
-    //         break;
-    //     }
-    // }
 }

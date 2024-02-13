@@ -34,48 +34,49 @@ struct Args {
 }
 
 fn main() -> io::Result<()> {
-    Builder::new().filter(None, LevelFilter::Info).init();
-
     let args = Args::parse();
-    let message_vector: Arc<Mutex<Vec<Message>>> = Arc::new(Mutex::new(Vec::new()));
-    let message_vector_clone = Arc::clone(&message_vector);
+    Builder::new().filter(None, LevelFilter::Info).init();
 
     if args.is_server {
         run_server(get_local_ip().unwrap().as_str());
-    } else {
-        if args.server_ip != "" {
-            let server_ip = args.server_ip;
-            let mut stream = TcpStream::connect(server_ip).unwrap();
-            let mut stream_clone = stream.try_clone().unwrap();
-            std::thread::spawn(move || {
-                run_client(&mut stream, message_vector_clone);
-            });
-
-            enable_raw_mode()?;
-            crossterm::execute!(stdout(), EnterAlternateScreen, EnableMouseCapture)?;
-            let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
-            terminal.show_cursor()?;
-            let mut text_area = TextArea::default();
-            text_area.set_cursor_line_style(Style::default());
-            text_area.set_placeholder_text("Enter message here");
-
-            let mut should_quit = false;
-            while !should_quit {
-                terminal.draw(|f| ui(f, Arc::clone(&message_vector), &mut text_area))?;
-                should_quit = handle_events(&mut text_area, &mut stream_clone)?;
-            }
-
-            disable_raw_mode()?;
-            crossterm::execute!(
-                terminal.backend_mut(),
-                LeaveAlternateScreen,
-                DisableMouseCapture
-            )?;
-            terminal.show_cursor()?;
-        } else {
-            panic!("Please provide a server IP address");
-        }
+        return Ok(());
     }
+
+    if args.server_ip == "" {
+        panic!("Please provide a server IP address");
+    }
+
+    let message_vector: Arc<Mutex<Vec<Message>>> = Arc::new(Mutex::new(Vec::new()));
+    let message_vector_clone = Arc::clone(&message_vector);
+
+    let server_ip = args.server_ip;
+    let mut stream = TcpStream::connect(server_ip).unwrap();
+    let mut stream_clone = stream.try_clone().unwrap();
+    std::thread::spawn(move || {
+        run_client(&mut stream, message_vector_clone);
+    });
+
+    enable_raw_mode()?;
+    crossterm::execute!(stdout(), EnterAlternateScreen, EnableMouseCapture)?;
+    let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
+    terminal.show_cursor()?;
+    let mut text_area = TextArea::default();
+    text_area.set_cursor_line_style(Style::default());
+    text_area.set_placeholder_text("Enter message here");
+
+    let mut should_quit = false;
+    while !should_quit {
+        terminal.draw(|f| ui(f, Arc::clone(&message_vector), &mut text_area))?;
+        should_quit = handle_events(&mut text_area, &mut stream_clone)?;
+    }
+
+    disable_raw_mode()?;
+    crossterm::execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
+    terminal.show_cursor()?;
 
     Ok(())
 }
