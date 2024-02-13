@@ -1,4 +1,4 @@
-Lan Chat ![crates.io](https://img.shields.io/crates/v/lan-chat.svg)
+Lan Chat ![crates.io](https://img.shields.io/crates/v/lan-chat.svg) ![Build Passing](https://github.com/Saphereye/lan-chat/actions/workflows/rust.yml/badge.svg)
 ---
 A terminal based chatting application with a terminal user interface
 

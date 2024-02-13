@@ -42,11 +42,11 @@ fn main() -> io::Result<()> {
         return Ok(());
     }
 
-    if args.server_ip == "" {
+    if args.server_ip.is_empty() {
         panic!("Please provide a server IP address");
     }
 
-    let message_vector: Arc<Mutex<Vec<Message>>> = Arc::new(Mutex::new(Vec::new()));
+    let message_vector: Arc<Mutex<Vec<MessageType>>> = Arc::new(Mutex::new(Vec::new()));
     let message_vector_clone = Arc::clone(&message_vector);
 
     let server_ip = args.server_ip;
@@ -90,7 +90,7 @@ fn handle_events(text_area: &mut TextArea, stream: &mut TcpStream) -> io::Result
                     KeyCode::Char('q') => {
                         send_message(
                             stream,
-                            &Message::Leave(stream.local_addr().unwrap().to_string()),
+                            &MessageType::Leave(stream.local_addr().unwrap().to_string()),
                         )?;
                         return Ok(true);
                     }
@@ -98,7 +98,7 @@ fn handle_events(text_area: &mut TextArea, stream: &mut TcpStream) -> io::Result
                         let message = text_area.lines()[0].clone();
                         send_message(
                             stream,
-                            &Message::Message(stream.local_addr().unwrap().to_string(), message),
+                            &MessageType::Message(stream.local_addr().unwrap().to_string(), message),
                         )?;
                         while !text_area.is_empty() {
                             text_area.delete_char();
@@ -122,7 +122,7 @@ fn handle_events(text_area: &mut TextArea, stream: &mut TcpStream) -> io::Result
 }
 
 /// Responsible for drawing the UI. Interfaces with the message vector of the screen.
-fn ui(frame: &mut Frame, message_vector: Arc<Mutex<Vec<Message>>>, text_area: &mut TextArea) {
+fn ui(frame: &mut Frame, message_vector: Arc<Mutex<Vec<MessageType>>>, text_area: &mut TextArea) {
     // Lock the Mutex and get a reference to the Vec<Message>
     let messages = message_vector.lock().unwrap();
 
@@ -130,17 +130,17 @@ fn ui(frame: &mut Frame, message_vector: Arc<Mutex<Vec<Message>>>, text_area: &m
     let mut message_lines = vec![];
     for message in messages.iter() {
         let span = match message {
-            Message::Info(info) => Span::styled(info.clone(), Style::default().fg(Color::Green)),
-            Message::Leave(leave) => {
+            MessageType::Info(info) => Span::styled(info.clone(), Style::default().fg(Color::Green)),
+            MessageType::Leave(leave) => {
                 let formatted_leave = format!("{} has left the chat", leave);
                 Span::styled(formatted_leave, Style::default().fg(Color::Yellow))
             }
-            Message::Message(source, message) => {
+            MessageType::Message(source, message) => {
                 let formatted_message = format!("({}): {}", source, message);
                 Span::styled(formatted_message, Style::default().fg(Color::White))
             }
-            Message::Error(error) => Span::styled(error.clone(), Style::default().fg(Color::Red)),
-            Message::Command(command) => {
+            MessageType::Error(error) => Span::styled(error.clone(), Style::default().fg(Color::Red)),
+            MessageType::Command(command) => {
                 Span::styled(command.clone(), Style::default().fg(Color::Blue))
             }
         };

@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 /// Info, Leave, Error and Command (in progress) just need the text
 /// Message requires the content and the sender information
 #[derive(Serialize, Deserialize)]
-pub enum Message {
+pub enum MessageType {
     Info(String),
     Leave(String),
     Message(String, String), // Source and the message itself
@@ -46,23 +46,23 @@ impl Server {
         let join_message = format!("{} has entered the chat.", addr_clone);
         for (existing_client, _) in &*clients {
             let mut existing_client = existing_client.try_clone().unwrap();
-            send_message(&mut existing_client, &Message::Info(join_message.clone())).unwrap();
+            send_message(&mut existing_client, &MessageType::Info(join_message.clone())).unwrap();
         }
     }
 
     /// Implementation of broadcasting a message to all the clients. Also logs the message to the server.
-    fn broadcast(&self, message: &Message) {
+    fn broadcast(&self, message: &MessageType) {
         let mut clients = self.clients.lock().unwrap();
         // println!("In broadcast: {:?}", clients);
         match message {
-            Message::Message(sender_addr, ref message_string) => {
+            MessageType::Message(sender_addr, ref message_string) => {
                 for (client, _) in clients.iter_mut() {
-                    send_message(client, &message).unwrap();
+                    send_message(client, message).unwrap();
                 }
                 info!("({}): {}", sender_addr, message_string);
             }
-            Message::Leave(addr) => {
-                self.remove_client(&addr);
+            MessageType::Leave(addr) => {
+                self.remove_client(addr);
             }
             _ => {}
         }
@@ -76,7 +76,7 @@ impl Server {
             clients.remove(index);
             // Notify all clients about the departure
             for (client, _) in &mut *clients {
-                send_message(client, &Message::Leave(addr.to_string())).unwrap();
+                send_message(client, &MessageType::Leave(addr.to_string())).unwrap();
                 client.flush().unwrap();
             }
         }
@@ -125,10 +125,10 @@ pub fn run_server(server_ip: &str) {
             let server = server.clone();
             while let Ok(message) = receive_message(&mut stream) {
                 match message {
-                    Message::Leave(addr) => {
+                    MessageType::Leave(addr) => {
                         server.remove_client(&addr);
                     }
-                    Message::Message(_, _) => {
+                    MessageType::Message(_, _) => {
                         server.broadcast(&message);
                     }
                     _ => {}
@@ -140,7 +140,7 @@ pub fn run_server(server_ip: &str) {
 }
 
 /// Responsible for sending a message given stream and message enum
-pub fn send_message(stream: &mut TcpStream, message: &Message) -> std::io::Result<()> {
+pub fn send_message(stream: &mut TcpStream, message: &MessageType) -> std::io::Result<()> {
     let bytes = bincode::serialize(&message)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
     stream.write_all(&bytes)?;
@@ -148,7 +148,7 @@ pub fn send_message(stream: &mut TcpStream, message: &Message) -> std::io::Resul
 }
 
 /// Responsible for receiving a message given stream
-fn receive_message(stream: &mut TcpStream) -> std::io::Result<Message> {
+fn receive_message(stream: &mut TcpStream) -> std::io::Result<MessageType> {
     let mut buffer = [0; 1024];
     match stream.read(&mut buffer) {
         Ok(_) => {}
@@ -156,23 +156,23 @@ fn receive_message(stream: &mut TcpStream) -> std::io::Result<Message> {
             return Err(e);
         }
     }
-    let message: Message = bincode::deserialize(&buffer).unwrap();
+    let message: MessageType = bincode::deserialize(&buffer).unwrap();
     Ok(message)
 }
 
 /// Runs the client. Connects to the server and receives server messages.
-pub fn run_client(stream: &mut TcpStream, message_vector: Arc<Mutex<Vec<Message>>>) {
+pub fn run_client(stream: &mut TcpStream, message_vector: Arc<Mutex<Vec<MessageType>>>) {
     if let Ok(s) = stream.local_addr() {
         message_vector
             .lock()
             .unwrap()
-            .push(Message::Info(format!("Your ip is: {}", s)));
+            .push(MessageType::Info(format!("Your ip is: {}", s)));
     };
 
     // Print the server's address
     match stream.peer_addr() {
         Ok(addr) => {
-            message_vector.lock().unwrap().push(Message::Info(format!(
+            message_vector.lock().unwrap().push(MessageType::Info(format!(
                 "Connected to server at address: {}",
                 addr
             )));
@@ -182,10 +182,10 @@ pub fn run_client(stream: &mut TcpStream, message_vector: Arc<Mutex<Vec<Message>
             std::process::exit(1);
         }
     }
-    message_vector.lock().unwrap().push(Message::Info(
+    message_vector.lock().unwrap().push(MessageType::Info(
         "To quit the chat, type /quit and press enter".to_string(),
     ));
-    message_vector.lock().unwrap().push(Message::Info(
+    message_vector.lock().unwrap().push(MessageType::Info(
         "To send a message, type your message and press enter".to_string(),
     ));
     // make a lot of black lines after this
@@ -193,7 +193,7 @@ pub fn run_client(stream: &mut TcpStream, message_vector: Arc<Mutex<Vec<Message>
         message_vector
             .lock()
             .unwrap()
-            .push(Message::Info("".to_string()));
+            .push(MessageType::Info("".to_string()));
     }
 
     // Spawn a thread to read messages from the server
