@@ -5,8 +5,18 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 extern crate if_addrs;
 use if_addrs::get_if_addrs;
+use lazy_static::lazy_static;
 use log::*;
 use serde::{Deserialize, Serialize};
+use rand::Rng;
+
+lazy_static! {
+    static ref TIPS: Mutex<Vec<String>> = Mutex::new(vec![
+        "Type /help in the chat".to_string(),
+        "Use arrow keys to see chat history".to_string(),
+        "Type /quit to leave program".to_string(),
+    ]);
+}
 
 /// A message that can be sent between clients and the server.
 ///
@@ -134,7 +144,9 @@ pub fn run_server(server_ip: &str) -> Result<(), Box<dyn std::error::Error>> {
         let mut stream = stream?;
         let server = server.clone();
         let client_addr = stream.peer_addr()?.to_string();
-        server.add_client(stream.try_clone().unwrap(), client_addr.clone()).unwrap();
+        server
+            .add_client(stream.try_clone().unwrap(), client_addr.clone())
+            .unwrap();
         thread::spawn(move || {
             let server = server.clone();
             while let Ok(message) = receive_message(&mut stream) {
@@ -284,15 +296,12 @@ pub fn run_client(
             std::process::exit(1);
         }
     }
-    message_vector.lock().unwrap().push(MessageType::Info(
-        "To quit the chat, type /quit and press enter".to_string(),
-    ));
-    message_vector.lock().unwrap().push(MessageType::Info(
-        "To send a message, type your message and press enter".to_string(),
-    ));
-    message_vector.lock().unwrap().push(MessageType::Info(
-        "Use arrow keys to see chat history".to_string(),
-    ));
+
+    let mut rng = rand::thread_rng();
+    let index = rng.gen_range(0..TIPS.lock().unwrap().len());
+    let tip = TIPS.lock().unwrap()[index].clone();
+    message_vector.lock().unwrap().push(MessageType::Info(format!("TIP: {}", tip)));
+
     // make a lot of black lines after this
     for _ in 0..2 {
         message_vector

@@ -1,6 +1,6 @@
 [package]
 name = "lan-chat"
-version = "0.7.0"
+version = "0.8.0"
 edition = "2021"
 authors = ["Saphereye <adarshdas950@gmail.com>"]
 license = "MIT"
@@ -29,3 +29,5 @@ bincode = "1.3"
 log = "0.4.20"
 env_logger = "0.11.1"
 clap = { version = "4.5.0", features = ["derive"] }
+rand = "0.8.5"
+lazy_static = "1.4.0"

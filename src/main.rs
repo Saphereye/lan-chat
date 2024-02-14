@@ -184,7 +184,7 @@ fn ui(
     frame: &mut Frame,
     message_vector: Arc<Mutex<Vec<MessageType>>>,
     text_area: &mut TextArea,
-    scroll: &mut u16,
+    scroll: &mut u16
 ) {
     // Lock the Mutex and get a reference to the Vec<Message>
     let messages = message_vector.lock().unwrap();
@@ -202,6 +202,11 @@ fn ui(
             }
             MessageType::Message(source, message) => {
                 let formatted_message = format!("({}): {}", source, message);
+                // let padded_message = if *source == local_address {
+                //     format!("{:>1$}", formatted_message, frame.size().width as usize)
+                // } else {
+                //     formatted_message
+                // };
                 Span::styled(formatted_message, Style::default().fg(Color::White))
             }
             MessageType::Error(error) => {
