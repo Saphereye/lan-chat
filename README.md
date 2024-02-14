@@ -13,3 +13,7 @@ Usage
 ---
 1. Run `lan-chat -i` to run the server. The output will display the server ip
 2. Use `lan-chat -s <server-ip>` to connect to the server
+
+Running Example
+---
+![image](https://github.com/Saphereye/lan-chat/assets/59739923/daada2ff-4cf0-4251-8e91-92b867f1c2bc)
