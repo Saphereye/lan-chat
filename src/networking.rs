@@ -1,6 +1,6 @@
 use std::io::{self, Read, Write};
+use std::net::TcpListener;
 use std::net::TcpStream;
-use std::net::{IpAddr, TcpListener};
 use std::sync::{Arc, Mutex};
 use std::thread;
 extern crate if_addrs;
@@ -36,8 +36,12 @@ impl Server {
     }
 
     /// Add a new client to the server. On addition it broadcasts a message to all the existing clients that a new client has joined and logs to server.
-    fn add_client(&self, client: TcpStream, addr: String) {
-        let mut clients = self.clients.lock().unwrap();
+    fn add_client(
+        &self,
+        client: TcpStream,
+        addr: String,
+    ) -> Result<(), Box<dyn std::error::Error + '_>> {
+        let mut clients = self.clients.lock()?;
         let addr_clone = addr.clone();
         clients.push((client, addr));
         info!("{} has entered the chat.", addr_clone);
@@ -45,50 +49,60 @@ impl Server {
         // Notify all existing clients about the new client
         let join_message = format!("{} has entered the chat.", addr_clone);
         for (existing_client, _) in &*clients {
-            let mut existing_client = existing_client.try_clone().unwrap();
-            send_message(&mut existing_client, &MessageType::Info(join_message.clone())).unwrap();
+            let mut existing_client = existing_client.try_clone()?;
+            send_message(
+                &mut existing_client,
+                &MessageType::Info(join_message.clone()),
+            )?;
         }
+
+        Ok(())
     }
 
     /// Implementation of broadcasting a message to all the clients. Also logs the message to the server.
-    fn broadcast(&self, message: &MessageType) {
-        let mut clients = self.clients.lock().unwrap();
+    fn broadcast(&self, message: &MessageType) -> Result<(), Box<dyn std::error::Error + '_>> {
+        let mut clients = self.clients.lock()?;
         // println!("In broadcast: {:?}", clients);
         match message {
             MessageType::Message(sender_addr, ref message_string) => {
                 for (client, _) in clients.iter_mut() {
-                    send_message(client, message).unwrap();
+                    send_message(client, message)?;
                 }
                 info!("({}): {}", sender_addr, message_string);
             }
             MessageType::Leave(addr) => {
-                self.remove_client(addr);
+                self.remove_client(addr)?;
             }
             _ => {}
         }
+
+        Ok(())
     }
 
     /// Removes a client from the server. Also broadcasts a message to all the clients that the client has left and logs to server.
-    fn remove_client(&self, addr: &str) {
-        let mut clients = self.clients.lock().unwrap();
+    fn remove_client(&self, addr: &str) -> Result<(), Box<dyn std::error::Error + '_>> {
+        let mut clients = self.clients.lock()?;
         // Find and remove the client by address
         if let Some(index) = clients.iter().position(|(_, a)| a == addr) {
             clients.remove(index);
             // Notify all clients about the departure
             for (client, _) in &mut *clients {
-                send_message(client, &MessageType::Leave(addr.to_string())).unwrap();
-                client.flush().unwrap();
+                send_message(client, &MessageType::Leave(addr.to_string()))?;
+                client.flush()?;
             }
         }
         warn!("{} has left the chat.", addr);
+        Ok(())
     }
 }
 
 pub fn get_local_ip() -> io::Result<String> {
     if let Ok(interfaces) = get_if_addrs() {
         for interface in interfaces {
-            if let IpAddr::V4(ipv4) = interface.ip() {
-                return Ok(ipv4.to_string());
+            if !interface.is_loopback() && !interface.addr.is_link_local() {
+                if let if_addrs::IfAddr::V4(ref addr) = interface.addr {
+                    return Ok(addr.ip.to_string());
+                }
             }
         }
     }
@@ -99,16 +113,16 @@ pub fn get_local_ip() -> io::Result<String> {
 }
 
 /// Runs the server. The server listens for incoming connections and spawns a new thread for each one.
-pub fn run_server(server_ip: &str) {
+pub fn run_server(server_ip: &str) -> Result<(), Box<dyn std::error::Error>> {
     // println!("Initializing server");
     let server = Server::new();
 
     // let listener = TcpListener::bind(format!("{server_ip}:0")).unwrap();
-    let listener = TcpListener::bind(format!("{server_ip}:0")).unwrap();
-    println!("Server listening on {}", listener.local_addr().unwrap());
+    let listener = TcpListener::bind(format!("{server_ip}:0"))?;
+    println!("Server listening on {}", listener.local_addr()?);
     println!(
         "To join the chat, use the following command: lan-chat {}",
-        listener.local_addr().unwrap()
+        listener.local_addr()?
     );
     println!(
         "Running program version {}, Created by {}",
@@ -117,26 +131,109 @@ pub fn run_server(server_ip: &str) {
     );
 
     for stream in listener.incoming() {
-        let mut stream = stream.unwrap();
+        let mut stream = stream?;
         let server = server.clone();
-        let client_addr = stream.peer_addr().unwrap().to_string();
-        server.add_client(stream.try_clone().unwrap(), client_addr.clone());
+        let client_addr = stream.peer_addr()?.to_string();
+        server.add_client(stream.try_clone().unwrap(), client_addr.clone()).unwrap();
         thread::spawn(move || {
             let server = server.clone();
             while let Ok(message) = receive_message(&mut stream) {
                 match message {
                     MessageType::Leave(addr) => {
-                        server.remove_client(&addr);
+                        if let Err(e) = server.remove_client(&addr) {
+                            error!(
+                                "Failed to remove client: {}. Client removal error: {}",
+                                addr, e
+                            );
+                            std::process::exit(1);
+                        }
                     }
                     MessageType::Message(_, _) => {
-                        server.broadcast(&message);
+                        if let Err(e) = server.broadcast(&message) {
+                            error!("Failes to broadcast message. Broadcasting error: {}", e);
+                            std::process::exit(1);
+                        }
+                    }
+                    MessageType::Command(command) => {
+                        info!("Client {} has run the command '{}'", client_addr, command);
+
+                        match command.as_str() {
+                            "help" => {
+                                if let Err(e) =
+                                    send_message(&mut stream, &MessageType::Info("".to_string()))
+                                {
+                                    let peer_address = match stream.peer_addr() {
+                                        Ok(a) => a.to_string(),
+                                        Err(e) => {
+                                            format!("Couldn't find peer address because of: {}.", e)
+                                        }
+                                    };
+                                    error!("Failed to send message to peer: {}. Sending message error: {}", peer_address, e);
+                                    std::process::exit(1);
+                                }
+
+                                if let Err(e) = send_message(
+                                    &mut stream,
+                                    &MessageType::Info(format!(
+                                        "Running program version {}, Created by {}",
+                                        env!("CARGO_PKG_VERSION"),
+                                        env!("CARGO_PKG_AUTHORS")
+                                    )),
+                                ) {
+                                    let peer_address = match stream.peer_addr() {
+                                        Ok(a) => a.to_string(),
+                                        Err(e) => {
+                                            format!("Couldn't find peer address because of: {}.", e)
+                                        }
+                                    };
+                                    error!("Failed to send message to peer: {}. Sending message error: {}", peer_address, e);
+                                };
+
+                                for command in ["help", "quit"] {
+                                    if let Err(e) = send_message(
+                                        &mut stream,
+                                        &MessageType::Info(format!("{}", command)),
+                                    ) {
+                                        let peer_address = match stream.peer_addr() {
+                                            Ok(a) => a.to_string(),
+                                            Err(e) => format!(
+                                                "Couldn't find peer address because of: {}.",
+                                                e
+                                            ),
+                                        };
+                                        error!("Failed to send message to peer: {}. Sending message error: {}", peer_address, e);
+                                    }
+                                }
+
+                                if let Err(e) =
+                                    send_message(&mut stream, &MessageType::Info("".to_string()))
+                                {
+                                    let peer_address = match stream.peer_addr() {
+                                        Ok(a) => a.to_string(),
+                                        Err(e) => {
+                                            format!("Couldn't find peer address because of: {}.", e)
+                                        }
+                                    };
+                                    error!("Failed to send message to peer: {}. Sending message error: {}", peer_address, e);
+                                }
+                            }
+                            _ => {}
+                        }
                     }
                     _ => {}
                 }
             }
-            server.remove_client(&client_addr);
+
+            if let Err(e) = server.remove_client(&client_addr) {
+                error!(
+                    "Failed to remove client: {}. Client removal error: {}",
+                    client_addr, e
+                );
+            };
         });
     }
+
+    Ok(())
 }
 
 /// Responsible for sending a message given stream and message enum
@@ -144,24 +241,26 @@ pub fn send_message(stream: &mut TcpStream, message: &MessageType) -> std::io::R
     let bytes = bincode::serialize(&message)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
     stream.write_all(&bytes)?;
-    stream.flush()
+    stream.flush()?;
+    std::thread::sleep(std::time::Duration::from_millis(100));
+
+    Ok(())
 }
 
 /// Responsible for receiving a message given stream
-fn receive_message(stream: &mut TcpStream) -> std::io::Result<MessageType> {
+fn receive_message(stream: &mut TcpStream) -> Result<MessageType, Box<dyn std::error::Error>> {
     let mut buffer = [0; 1024];
-    match stream.read(&mut buffer) {
-        Ok(_) => {}
-        Err(e) => {
-            return Err(e);
-        }
-    }
-    let message: MessageType = bincode::deserialize(&buffer).unwrap();
+    stream.read(&mut buffer)?;
+
+    let message: MessageType = bincode::deserialize(&buffer)?;
     Ok(message)
 }
 
 /// Runs the client. Connects to the server and receives server messages.
-pub fn run_client(stream: &mut TcpStream, message_vector: Arc<Mutex<Vec<MessageType>>>) {
+pub fn run_client(
+    stream: &mut TcpStream,
+    message_vector: Arc<Mutex<Vec<MessageType>>>,
+) -> Result<(), Box<dyn std::error::Error>> {
     if let Ok(s) = stream.local_addr() {
         message_vector
             .lock()
@@ -172,10 +271,13 @@ pub fn run_client(stream: &mut TcpStream, message_vector: Arc<Mutex<Vec<MessageT
     // Print the server's address
     match stream.peer_addr() {
         Ok(addr) => {
-            message_vector.lock().unwrap().push(MessageType::Info(format!(
-                "Connected to server at address: {}",
-                addr
-            )));
+            message_vector
+                .lock()
+                .unwrap()
+                .push(MessageType::Info(format!(
+                    "Connected to server at address: {}",
+                    addr
+                )));
         }
         Err(e) => {
             error!("Failed to retrieve server address: {}", e);
@@ -187,6 +289,9 @@ pub fn run_client(stream: &mut TcpStream, message_vector: Arc<Mutex<Vec<MessageT
     ));
     message_vector.lock().unwrap().push(MessageType::Info(
         "To send a message, type your message and press enter".to_string(),
+    ));
+    message_vector.lock().unwrap().push(MessageType::Info(
+        "Use arrow keys to see chat history".to_string(),
     ));
     // make a lot of black lines after this
     for _ in 0..2 {
@@ -203,4 +308,6 @@ pub fn run_client(stream: &mut TcpStream, message_vector: Arc<Mutex<Vec<MessageT
             message_vector.lock().unwrap().push(message);
         }
     });
+
+    Ok(())
 }

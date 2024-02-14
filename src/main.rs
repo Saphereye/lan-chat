@@ -33,12 +33,12 @@ struct Args {
     server_ip: String,
 }
 
-fn main() -> io::Result<()> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     Builder::new().filter(None, LevelFilter::Info).init();
 
     if args.is_server {
-        run_server(get_local_ip().unwrap().as_str());
+        run_server(get_local_ip()?.as_str())?;
         return Ok(());
     }
 
@@ -50,10 +50,10 @@ fn main() -> io::Result<()> {
     let message_vector_clone = Arc::clone(&message_vector);
 
     let server_ip = args.server_ip;
-    let mut stream = TcpStream::connect(server_ip).unwrap();
-    let mut stream_clone = stream.try_clone().unwrap();
+    let mut stream = TcpStream::connect(server_ip)?;
+    let mut stream_clone = stream.try_clone()?;
     std::thread::spawn(move || {
-        run_client(&mut stream, message_vector_clone);
+        run_client(&mut stream, message_vector_clone).unwrap();
     });
 
     enable_raw_mode()?;
@@ -68,7 +68,12 @@ fn main() -> io::Result<()> {
     let mut should_quit = false;
     while !should_quit {
         terminal.draw(|f| ui(f, Arc::clone(&message_vector), &mut text_area, &mut scroll))?;
-        should_quit = handle_events(&mut text_area, &mut stream_clone, &mut scroll)?;
+        should_quit = handle_events(
+            Arc::clone(&message_vector),
+            &mut text_area,
+            &mut stream_clone,
+            &mut scroll,
+        )?;
     }
 
     disable_raw_mode()?;
@@ -84,30 +89,68 @@ fn main() -> io::Result<()> {
 
 /// Handles the events for the UI. Returns true if the user wants to quit the application.
 fn handle_events(
+    message_vector: Arc<Mutex<Vec<MessageType>>>,
     text_area: &mut TextArea,
     stream: &mut TcpStream,
     scroll: &mut u16,
 ) -> io::Result<bool> {
+    let mut message_vector = message_vector.lock().unwrap();
     if event::poll(std::time::Duration::from_millis(50))? {
         if let Event::Key(key) = event::read()? {
             if key.kind == event::KeyEventKind::Press {
                 match key.code {
-                    KeyCode::Char('q') => {
-                        send_message(
-                            stream,
-                            &MessageType::Leave(stream.local_addr().unwrap().to_string()),
-                        )?;
-                        return Ok(true);
-                    }
                     KeyCode::Enter => {
                         let message = text_area.lines()[0].clone();
-                        send_message(
-                            stream,
-                            &MessageType::Message(
-                                stream.local_addr().unwrap().to_string(),
-                                message,
-                            ),
-                        )?;
+
+                        if message.starts_with("/") {
+                            if message[1..] == *"quit" {
+                                send_message(
+                                    stream,
+                                    &MessageType::Leave(stream.local_addr().unwrap().to_string()),
+                                )?;
+                                return Ok(true);
+                            }
+                            send_message(stream, &MessageType::Command(message[1..].to_string()))?;
+                            message_vector.push(MessageType::Command(message[1..].to_string()));
+                        } else {
+                            if !message.is_empty() {
+                                send_message(
+                                    stream,
+                                    &MessageType::Message(
+                                        stream.local_addr().unwrap().to_string(),
+                                        message,
+                                    ),
+                                )?;
+                            }
+                        }
+
+                        // let mut commands: Vec<MessageType> = vec![];
+                        // let mut text_message = String::new();
+
+                        // for part in message.split(' ').collect::<Vec<&str>>() {
+                        //     if part.starts_with("/") {
+                        //         if part[1..] == *"quit" {
+                        //             send_message(
+                        //                 stream,
+                        //                 &MessageType::Leave(stream.local_addr().unwrap().to_string()),
+                        //             )?;
+                        //             return Ok(true);
+                        //         }
+                        //         commands.push(MessageType::Command(part[1..].to_string()));
+                        //     } else {
+                        //         text_message.push_str(part);
+                        //         text_message.push_str(" ");
+                        //     }
+                        // }
+
+                        // for command in commands {
+                        //     send_message(stream, &command)?;
+                        // }
+
+                        // if !text_message.is_empty() {
+                        //     send_message(stream, &MessageType::Message(stream.local_addr().unwrap().to_string(), text_message))?;
+                        // }
+
                         while !text_area.is_empty() {
                             text_area.delete_char();
                         }
@@ -165,7 +208,8 @@ fn ui(
                 Span::styled(error.clone(), Style::default().fg(Color::Red))
             }
             MessageType::Command(command) => {
-                Span::styled(command.clone(), Style::default().fg(Color::Blue))
+                let formatted_leave = format!("Ran command: {}", command);
+                Span::styled(formatted_leave, Style::default().fg(Color::Blue))
             }
         };
         message_lines.push(Line::from(span));
