@@ -43,7 +43,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if args.server_ip.is_empty() {
-        panic!("Please provide a server IP address");
+        return Err("Please provide a server IP address or start as server. Try lan-chat --help for more info.".into());
     }
 
     let message_vector: Arc<Mutex<Vec<MessageType>>> = Arc::new(Mutex::new(Vec::new()));
