@@ -1,6 +1,5 @@
 use std::io::{self, Read, Write};
-use std::net::TcpListener;
-use std::net::TcpStream;
+use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::thread;
 extern crate if_addrs;
@@ -23,7 +22,7 @@ lazy_static! {
 /// The numerous types of messages are categorized to help display the same in a better manner.
 /// Info, Leave, Error and Command (in progress) just need the text
 /// Message requires the content and the sender information
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub enum MessageType {
     Info(String),
     Leave(String),
@@ -144,6 +143,7 @@ pub fn run_server(server_ip: &str) -> Result<(), Box<dyn std::error::Error>> {
         let mut stream = stream?;
         let server = server.clone();
         let client_addr = stream.peer_addr()?.to_string();
+        let client_addr_clone = client_addr.clone();
         server
             .add_client(stream.try_clone().unwrap(), client_addr.clone())
             .unwrap();
@@ -167,67 +167,46 @@ pub fn run_server(server_ip: &str) -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                     MessageType::Command(command) => {
-                        info!("Client {} has run the command '{}'", client_addr, command);
+                        info!("Client {} has run the command '{}'", client_addr_clone, command);
 
                         match command.as_str() {
                             "help" => {
-                                if let Err(e) =
-                                    send_message(&mut stream, &MessageType::Info("".to_string()))
-                                {
-                                    let peer_address = match stream.peer_addr() {
-                                        Ok(a) => a.to_string(),
-                                        Err(e) => {
-                                            format!("Couldn't find peer address because of: {}.", e)
-                                        }
-                                    };
-                                    error!("Failed to send message to peer: {}. Sending message error: {}", peer_address, e);
-                                    std::process::exit(1);
-                                }
+                                send_message(&mut stream, &MessageType::Info("".to_string()))
+                                    .unwrap();
 
-                                if let Err(e) = send_message(
+                                send_message(
                                     &mut stream,
                                     &MessageType::Info(format!(
                                         "Running program version {}, Created by {}",
                                         env!("CARGO_PKG_VERSION"),
                                         env!("CARGO_PKG_AUTHORS")
                                     )),
-                                ) {
-                                    let peer_address = match stream.peer_addr() {
-                                        Ok(a) => a.to_string(),
-                                        Err(e) => {
-                                            format!("Couldn't find peer address because of: {}.", e)
-                                        }
-                                    };
-                                    error!("Failed to send message to peer: {}. Sending message error: {}", peer_address, e);
-                                };
+                                )
+                                .unwrap();
 
-                                for command in ["help", "quit"] {
-                                    if let Err(e) = send_message(
+                                for command in ["help", "quit", "smile", "laugh", "thumbs_up"] {
+                                    send_message(
                                         &mut stream,
                                         &MessageType::Info(format!("> {}", command)),
-                                    ) {
-                                        let peer_address = match stream.peer_addr() {
-                                            Ok(a) => a.to_string(),
-                                            Err(e) => format!(
-                                                "Couldn't find peer address because of: {}.",
-                                                e
-                                            ),
-                                        };
-                                        error!("Failed to send message to peer: {}. Sending message error: {}", peer_address, e);
-                                    }
+                                    )
+                                    .unwrap();
+                                    std::thread::sleep(std::time::Duration::from_millis(100));
                                 }
 
-                                if let Err(e) =
-                                    send_message(&mut stream, &MessageType::Info("".to_string()))
-                                {
-                                    let peer_address = match stream.peer_addr() {
-                                        Ok(a) => a.to_string(),
-                                        Err(e) => {
-                                            format!("Couldn't find peer address because of: {}.", e)
-                                        }
-                                    };
-                                    error!("Failed to send message to peer: {}. Sending message error: {}", peer_address, e);
-                                }
+                                send_message(&mut stream, &MessageType::Info("".to_string()))
+                                    .unwrap();
+                            }
+                            "smile" => {
+                                send_message(&mut stream, &MessageType::Message(client_addr_clone.clone(), "😊".to_string()))
+                                    .unwrap();
+                            }
+                            "laugh" => {
+                                send_message(&mut stream, &MessageType::Message(client_addr_clone.clone(), "😂".to_string()))
+                                    .unwrap();
+                            }
+                            "thumbs_up" => {
+                                send_message(&mut stream, &MessageType::Message(client_addr_clone.clone(), "👍".to_string()))
+                                    .unwrap();
                             }
                             _ => {}
                         }
@@ -254,7 +233,6 @@ pub fn send_message(stream: &mut TcpStream, message: &MessageType) -> std::io::R
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
     stream.write_all(&bytes)?;
     stream.flush()?;
-    std::thread::sleep(std::time::Duration::from_millis(100));
 
     Ok(())
 }
@@ -332,4 +310,48 @@ pub fn run_client(
     });
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_send_message() {
+        let sender = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = sender.local_addr().unwrap();
+        let mut stream = TcpStream::connect(addr).unwrap();
+
+        let message = MessageType::Info("Test message".to_string());
+        assert!(send_message(&mut stream, &message).is_ok());
+    }
+
+    #[test]
+    fn test_receive_message() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        // Spawn a new thread to send the message.
+        let sender_handle = std::thread::spawn(move || {
+            let mut sender_stream = TcpStream::connect(addr).unwrap();
+            let message = MessageType::Info("Test message".to_string());
+            send_message(&mut sender_stream, &message).unwrap();
+        });
+
+        // Accept the connection from the sender.
+        let (mut receiver_stream, _) = listener.accept().unwrap();
+        let output_message = receive_message(&mut receiver_stream).unwrap();
+
+        // Wait for the sender thread to finish.
+        sender_handle.join().unwrap();
+
+        assert_eq!(
+            MessageType::Info("Test message".to_string()),
+            output_message
+        );
+    }
+
+    #[test]
+    fn test_local_ip() {
+        assert!(get_local_ip().is_ok());
+    }
 }

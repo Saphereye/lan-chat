@@ -122,33 +122,6 @@ fn handle_events(
                             )?;
                         }
 
-                        // let mut commands: Vec<MessageType> = vec![];
-                        // let mut text_message = String::new();
-
-                        // for part in message.split(' ').collect::<Vec<&str>>() {
-                        //     if part.starts_with("/") {
-                        //         if part[1..] == *"quit" {
-                        //             send_message(
-                        //                 stream,
-                        //                 &MessageType::Leave(stream.local_addr().unwrap().to_string()),
-                        //             )?;
-                        //             return Ok(true);
-                        //         }
-                        //         commands.push(MessageType::Command(part[1..].to_string()));
-                        //     } else {
-                        //         text_message.push_str(part);
-                        //         text_message.push_str(" ");
-                        //     }
-                        // }
-
-                        // for command in commands {
-                        //     send_message(stream, &command)?;
-                        // }
-
-                        // if !text_message.is_empty() {
-                        //     send_message(stream, &MessageType::Message(stream.local_addr().unwrap().to_string(), text_message))?;
-                        // }
-
                         while !text_area.is_empty() {
                             text_area.delete_char();
                         }
@@ -211,8 +184,7 @@ fn ui(
                 Span::styled(error.clone(), Style::default().fg(Color::Red))
             }
             MessageType::Command(command) => {
-                let formatted_leave = format!("Ran command: {}", command);
-                Span::styled(formatted_leave, Style::default().fg(Color::Blue))
+                Span::styled(command, Style::default())
             }
         };
         message_lines.push(Line::from(span));
