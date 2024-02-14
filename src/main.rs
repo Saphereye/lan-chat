@@ -102,26 +102,24 @@ fn handle_events(
                     KeyCode::Enter => {
                         let message = text_area.lines()[0].clone();
 
-                        if message.starts_with("/") {
-                            if message[1..] == *"quit" {
+                        if let Some(prefix) = message.strip_prefix('/') {
+                            if prefix == "quit" {
                                 send_message(
                                     stream,
                                     &MessageType::Leave(stream.local_addr().unwrap().to_string()),
                                 )?;
                                 return Ok(true);
                             }
-                            send_message(stream, &MessageType::Command(message[1..].to_string()))?;
-                            message_vector.push(MessageType::Command(message[1..].to_string()));
-                        } else {
-                            if !message.is_empty() {
-                                send_message(
-                                    stream,
-                                    &MessageType::Message(
-                                        stream.local_addr().unwrap().to_string(),
-                                        message,
-                                    ),
-                                )?;
-                            }
+                            send_message(stream, &MessageType::Command(prefix.to_string()))?;
+                            message_vector.push(MessageType::Command(prefix.to_string()));
+                        } else if !message.is_empty() {
+                            send_message(
+                                stream,
+                                &MessageType::Message(
+                                    stream.local_addr().unwrap().to_string(),
+                                    message,
+                                ),
+                            )?;
                         }
 
                         // let mut commands: Vec<MessageType> = vec![];
@@ -184,7 +182,7 @@ fn ui(
     frame: &mut Frame,
     message_vector: Arc<Mutex<Vec<MessageType>>>,
     text_area: &mut TextArea,
-    scroll: &mut u16
+    scroll: &mut u16,
 ) {
     // Lock the Mutex and get a reference to the Vec<Message>
     let messages = message_vector.lock().unwrap();

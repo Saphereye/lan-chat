@@ -7,8 +7,8 @@ extern crate if_addrs;
 use if_addrs::get_if_addrs;
 use lazy_static::lazy_static;
 use log::*;
-use serde::{Deserialize, Serialize};
 use rand::Rng;
+use serde::{Deserialize, Serialize};
 
 lazy_static! {
     static ref TIPS: Mutex<Vec<String>> = Mutex::new(vec![
@@ -204,7 +204,7 @@ pub fn run_server(server_ip: &str) -> Result<(), Box<dyn std::error::Error>> {
                                 for command in ["help", "quit"] {
                                     if let Err(e) = send_message(
                                         &mut stream,
-                                        &MessageType::Info(format!("{}", command)),
+                                        &MessageType::Info(format!("> {}", command)),
                                     ) {
                                         let peer_address = match stream.peer_addr() {
                                             Ok(a) => a.to_string(),
@@ -262,7 +262,17 @@ pub fn send_message(stream: &mut TcpStream, message: &MessageType) -> std::io::R
 /// Responsible for receiving a message given stream
 fn receive_message(stream: &mut TcpStream) -> Result<MessageType, Box<dyn std::error::Error>> {
     let mut buffer = [0; 1024];
-    stream.read(&mut buffer)?;
+    match stream.read(&mut buffer) {
+        Ok(_) => {}
+        Err(e) => {
+            error!(
+                "Couldn't read from stream properly. Receiving from: {}. Read error: {}",
+                stream.peer_addr().unwrap().to_string(),
+                e
+            );
+            std::process::exit(1)
+        }
+    }
 
     let message: MessageType = bincode::deserialize(&buffer)?;
     Ok(message)
@@ -300,7 +310,10 @@ pub fn run_client(
     let mut rng = rand::thread_rng();
     let index = rng.gen_range(0..TIPS.lock().unwrap().len());
     let tip = TIPS.lock().unwrap()[index].clone();
-    message_vector.lock().unwrap().push(MessageType::Info(format!("TIP: {}", tip)));
+    message_vector
+        .lock()
+        .unwrap()
+        .push(MessageType::Info(format!("TIP: {}", tip)));
 
     // make a lot of black lines after this
     for _ in 0..2 {
