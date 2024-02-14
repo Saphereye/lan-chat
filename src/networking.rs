@@ -170,32 +170,6 @@ pub fn run_server(server_ip: &str) -> Result<(), Box<dyn std::error::Error>> {
                         info!("Client {} has run the command '{}'", client_addr_clone, command);
 
                         match command.as_str() {
-                            "help" => {
-                                send_message(&mut stream, &MessageType::Info("".to_string()))
-                                    .unwrap();
-
-                                send_message(
-                                    &mut stream,
-                                    &MessageType::Info(format!(
-                                        "Running program version {}, Created by {}",
-                                        env!("CARGO_PKG_VERSION"),
-                                        env!("CARGO_PKG_AUTHORS")
-                                    )),
-                                )
-                                .unwrap();
-
-                                for command in ["help", "quit", "smile", "laugh", "thumbs_up"] {
-                                    send_message(
-                                        &mut stream,
-                                        &MessageType::Info(format!("> {}", command)),
-                                    )
-                                    .unwrap();
-                                    std::thread::sleep(std::time::Duration::from_millis(100));
-                                }
-
-                                send_message(&mut stream, &MessageType::Info("".to_string()))
-                                    .unwrap();
-                            }
                             "smile" => {
                                 send_message(&mut stream, &MessageType::Message(client_addr_clone.clone(), "😊".to_string()))
                                     .unwrap();

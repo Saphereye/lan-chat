@@ -103,13 +103,33 @@ fn handle_events(
                         let message = text_area.lines()[0].clone();
 
                         if let Some(prefix) = message.strip_prefix('/') {
-                            if prefix == "quit" {
-                                send_message(
-                                    stream,
-                                    &MessageType::Leave(stream.local_addr().unwrap().to_string()),
-                                )?;
-                                return Ok(true);
+                            match prefix {
+                                "help" => {
+                                    message_vector.push(MessageType::Info("".to_string()));
+                                    message_vector.push(MessageType::Info(format!(
+                                        "Running program version {}, Created by {}",
+                                        env!("CARGO_PKG_VERSION"),
+                                        env!("CARGO_PKG_AUTHORS")
+                                    )));
+
+                                    for command in ["help", "quit", "smile", "laugh", "thumbs_up"] {
+                                        message_vector.push(MessageType::Info(format!("> {}\n", command)));
+                                    }
+
+                                    message_vector.push(MessageType::Info("".to_string()));
+                                }
+                                "quit" => {
+                                    send_message(
+                                        stream,
+                                        &MessageType::Leave(
+                                            stream.local_addr().unwrap().to_string(),
+                                        ),
+                                    )?;
+                                    return Ok(true);
+                                }
+                                _ => {}
                             }
+
                             send_message(stream, &MessageType::Command(prefix.to_string()))?;
                             message_vector.push(MessageType::Command(prefix.to_string()));
                         } else if !message.is_empty() {
@@ -173,19 +193,12 @@ fn ui(
             }
             MessageType::Message(source, message) => {
                 let formatted_message = format!("({}): {}", source, message);
-                // let padded_message = if *source == local_address {
-                //     format!("{:>1$}", formatted_message, frame.size().width as usize)
-                // } else {
-                //     formatted_message
-                // };
                 Span::styled(formatted_message, Style::default().fg(Color::White))
             }
             MessageType::Error(error) => {
                 Span::styled(error.clone(), Style::default().fg(Color::Red))
             }
-            MessageType::Command(command) => {
-                Span::styled(command, Style::default())
-            }
+            _ => continue,
         };
         message_lines.push(Line::from(span));
     }
