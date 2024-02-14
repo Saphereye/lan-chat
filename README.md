@@ -11,8 +11,9 @@ Or clone the repo and build it manually using `cargo build`. In this way the exe
 
 Usage
 ---
-1. Run `lan-chat -i` to run the server. The output will display the server ip
-2. Use `lan-chat -s <server-ip>` to connect to the server
+1. Run `lan-chat --help` to learn about the commands.
+2. Run `lan-chat -i` to run the server. The output will display the server IP.
+3. Use `lan-chat -s <server-ip>` to connect to the server
 
 Running Example
 ---
