@@ -61,13 +61,14 @@ fn main() -> io::Result<()> {
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
     terminal.show_cursor()?;
     let mut text_area = TextArea::default();
+    let mut scroll = 0;
     text_area.set_cursor_line_style(Style::default());
     text_area.set_placeholder_text("Enter message here");
 
     let mut should_quit = false;
     while !should_quit {
-        terminal.draw(|f| ui(f, Arc::clone(&message_vector), &mut text_area))?;
-        should_quit = handle_events(&mut text_area, &mut stream_clone)?;
+        terminal.draw(|f| ui(f, Arc::clone(&message_vector), &mut text_area, &mut scroll))?;
+        should_quit = handle_events(&mut text_area, &mut stream_clone, &mut scroll)?;
     }
 
     disable_raw_mode()?;
@@ -82,7 +83,11 @@ fn main() -> io::Result<()> {
 }
 
 /// Handles the events for the UI. Returns true if the user wants to quit the application.
-fn handle_events(text_area: &mut TextArea, stream: &mut TcpStream) -> io::Result<bool> {
+fn handle_events(
+    text_area: &mut TextArea,
+    stream: &mut TcpStream,
+    scroll: &mut u16,
+) -> io::Result<bool> {
     if event::poll(std::time::Duration::from_millis(50))? {
         if let Event::Key(key) = event::read()? {
             if key.kind == event::KeyEventKind::Press {
@@ -98,11 +103,21 @@ fn handle_events(text_area: &mut TextArea, stream: &mut TcpStream) -> io::Result
                         let message = text_area.lines()[0].clone();
                         send_message(
                             stream,
-                            &MessageType::Message(stream.local_addr().unwrap().to_string(), message),
+                            &MessageType::Message(
+                                stream.local_addr().unwrap().to_string(),
+                                message,
+                            ),
                         )?;
                         while !text_area.is_empty() {
                             text_area.delete_char();
                         }
+                        *scroll = scroll.saturating_add(1);
+                    }
+                    KeyCode::Up => {
+                        *scroll = scroll.saturating_sub(1);
+                    }
+                    KeyCode::Down => {
+                        *scroll = scroll.saturating_add(1);
                     }
                     ref key_code => {
                         // Handle other keys
@@ -122,7 +137,12 @@ fn handle_events(text_area: &mut TextArea, stream: &mut TcpStream) -> io::Result
 }
 
 /// Responsible for drawing the UI. Interfaces with the message vector of the screen.
-fn ui(frame: &mut Frame, message_vector: Arc<Mutex<Vec<MessageType>>>, text_area: &mut TextArea) {
+fn ui(
+    frame: &mut Frame,
+    message_vector: Arc<Mutex<Vec<MessageType>>>,
+    text_area: &mut TextArea,
+    scroll: &mut u16,
+) {
     // Lock the Mutex and get a reference to the Vec<Message>
     let messages = message_vector.lock().unwrap();
 
@@ -130,7 +150,9 @@ fn ui(frame: &mut Frame, message_vector: Arc<Mutex<Vec<MessageType>>>, text_area
     let mut message_lines = vec![];
     for message in messages.iter() {
         let span = match message {
-            MessageType::Info(info) => Span::styled(info.clone(), Style::default().fg(Color::Green)),
+            MessageType::Info(info) => {
+                Span::styled(info.clone(), Style::default().fg(Color::Green))
+            }
             MessageType::Leave(leave) => {
                 let formatted_leave = format!("{} has left the chat", leave);
                 Span::styled(formatted_leave, Style::default().fg(Color::Yellow))
@@ -139,7 +161,9 @@ fn ui(frame: &mut Frame, message_vector: Arc<Mutex<Vec<MessageType>>>, text_area
                 let formatted_message = format!("({}): {}", source, message);
                 Span::styled(formatted_message, Style::default().fg(Color::White))
             }
-            MessageType::Error(error) => Span::styled(error.clone(), Style::default().fg(Color::Red)),
+            MessageType::Error(error) => {
+                Span::styled(error.clone(), Style::default().fg(Color::Red))
+            }
             MessageType::Command(command) => {
                 Span::styled(command.clone(), Style::default().fg(Color::Blue))
             }
@@ -153,17 +177,10 @@ fn ui(frame: &mut Frame, message_vector: Arc<Mutex<Vec<MessageType>>>, text_area
         .constraints([Constraint::Percentage(80), Constraint::Percentage(20)].as_ref())
         .split(frame.size());
 
-    let height_of_paragraph = chunks[0].height as usize;
-    let scroll = if message_lines.len() > height_of_paragraph {
-        message_lines.len() - height_of_paragraph
-    } else {
-        0
-    };
-
     // Display the messages on the screen
     frame.render_widget(
         Paragraph::new(message_lines)
-            .scroll((scroll as u16, 0))
+            .scroll((*scroll, 0))
             .block(Block::default().title("Lan Chat 💬").borders(Borders::ALL)),
         chunks[0],
     );
