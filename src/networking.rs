@@ -131,7 +131,7 @@ pub fn run_server(server_ip: &str) -> Result<(), Box<dyn std::error::Error>> {
     let listener = TcpListener::bind(format!("{server_ip}:0"))?;
     println!("Server listening on {}", listener.local_addr()?);
     println!(
-        "To join the chat, use the following command: lan-chat {}",
+        "To join the chat, use the following command: lan-chat -s {}",
         listener.local_addr()?
     );
     println!(
