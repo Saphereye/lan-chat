@@ -47,10 +47,10 @@ lan-chat -s <server-ip> -p <pseudonym>
 The supported emojis are as follows
 | Command     | Emoji |
 |-------------|-------|
-| :smile:     | 😊     |
-| :laughing:     | 😂     |
-| :thumbsup: | 👍     |
-| :cry:       | 😢     |
+| `:smile:`     | 😊     |
+| `:laughing:`     | 😂     |
+| `:thumbsup:` | 👍     |
+| `:cry: `      | 😢     |
 
 For all codes please refer to [Emoji Cheat Sheet](https://github.com/ikatyang/emoji-cheat-sheet/tree/master).
 
