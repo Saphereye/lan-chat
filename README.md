@@ -48,9 +48,11 @@ The supported emojis are as follows
 | Command     | Emoji |
 |-------------|-------|
 | :smile:     | 😊     |
-| :laugh:     | 😂     |
-| :thumbs_up: | 👍     |
-| :sad:       | 😔     |
+| :laughing:     | 😂     |
+| :thumbsup: | 👍     |
+| :cry:       | 😢     |
+
+For all codes please refer to [Emoji Cheat Sheet](https://github.com/ikatyang/emoji-cheat-sheet/tree/master).
 
 ## Running Example
 
