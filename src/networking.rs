@@ -14,6 +14,7 @@ lazy_static! {
         "Type /help in the chat".to_string(),
         "Use arrow keys to see chat history".to_string(),
         "Type /quit to leave program".to_string(),
+        "Use :smile: to insert a smiley, try :laugh: and :thumbs_up: too ;".to_string(),
     ]);
 }
 
@@ -22,19 +23,21 @@ lazy_static! {
 /// The numerous types of messages are categorized to help display the same in a better manner.
 /// Info, Leave, Error and Command (in progress) just need the text
 /// Message requires the content and the sender information
+/// Pseudonym is used to initiliaze or update a pseuodonym
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub enum MessageType {
     Info(String),
     Leave(String),
-    Message(String, String), // Source and the message itself
+    Message(String, String), // Pseudonym and the message itself
     Error(String),
     Command(String), // Not yet implemented
+    Pseudonym(String),
 }
 
 /// The chat server. Contains a list of clients and can broadcast messages to all of them.
 #[derive(Clone)]
 struct Server {
-    clients: Arc<Mutex<Vec<(TcpStream, String)>>>,
+    clients: Arc<Mutex<Vec<(TcpStream, String, String)>>>, // Stream, address, pseudonym
 }
 
 impl Server {
@@ -49,21 +52,10 @@ impl Server {
         &self,
         client: TcpStream,
         addr: String,
+        pseudonym: String,
     ) -> Result<(), Box<dyn std::error::Error + '_>> {
         let mut clients = self.clients.lock()?;
-        let addr_clone = addr.clone();
-        clients.push((client, addr));
-        info!("{} has entered the chat.", addr_clone);
-
-        // Notify all existing clients about the new client
-        let join_message = format!("{} has entered the chat.", addr_clone);
-        for (existing_client, _) in &*clients {
-            let mut existing_client = existing_client.try_clone()?;
-            send_message(
-                &mut existing_client,
-                &MessageType::Info(join_message.clone()),
-            )?;
-        }
+        clients.push((client, addr, pseudonym.clone()));
 
         Ok(())
     }
@@ -73,11 +65,11 @@ impl Server {
         let mut clients = self.clients.lock()?;
         // println!("In broadcast: {:?}", clients);
         match message {
-            MessageType::Message(sender_addr, ref message_string) => {
-                for (client, _) in clients.iter_mut() {
+            MessageType::Message(pseudonym, ref message_string) => {
+                for (client, _, _) in clients.iter_mut() {
                     send_message(client, message)?;
                 }
-                info!("({}): {}", sender_addr, message_string);
+                info!("({}): {}", pseudonym, message_string);
             }
             MessageType::Leave(addr) => {
                 self.remove_client(addr)?;
@@ -92,15 +84,15 @@ impl Server {
     fn remove_client(&self, addr: &str) -> Result<(), Box<dyn std::error::Error + '_>> {
         let mut clients = self.clients.lock()?;
         // Find and remove the client by address
-        if let Some(index) = clients.iter().position(|(_, a)| a == addr) {
-            clients.remove(index);
+        if let Some(index) = clients.iter().position(|(_, a, _)| a == addr) {
+            let (_, _, p) = clients.remove(index);
             // Notify all clients about the departure
-            for (client, _) in &mut *clients {
-                send_message(client, &MessageType::Leave(addr.to_string()))?;
+            for (client, _, _) in &mut *clients {
+                send_message(client, &MessageType::Leave(p.clone()))?;
                 client.flush()?;
             }
+            warn!("{} (pseudonym: {}) has left the chat.", addr, p);
         }
-        warn!("{} has left the chat.", addr);
         Ok(())
     }
 }
@@ -144,8 +136,13 @@ pub fn run_server(server_ip: &str) -> Result<(), Box<dyn std::error::Error>> {
         let server = server.clone();
         let client_addr = stream.peer_addr()?.to_string();
         let client_addr_clone = client_addr.clone();
+
         server
-            .add_client(stream.try_clone().unwrap(), client_addr.clone())
+            .add_client(
+                stream.try_clone().unwrap(),
+                client_addr.clone(),
+                "Jotaro Kujo".to_string(),
+            )
             .unwrap();
         thread::spawn(move || {
             let server = server.clone();
@@ -167,22 +164,28 @@ pub fn run_server(server_ip: &str) -> Result<(), Box<dyn std::error::Error>> {
                         }
                     }
                     MessageType::Command(command) => {
-                        info!("Client {} has run the command '{}'", client_addr_clone, command);
+                        info!(
+                            "Client {} has run the command '{}'",
+                            client_addr_clone, command
+                        );
+                    }
+                    MessageType::Pseudonym(pseudonym) => {
+                        let mut clients = server.clients.lock().unwrap();
+                        if let Some(index) = clients.iter().position(|(_, a, _)| a == &client_addr)
+                        {
+                            clients[index].2 = pseudonym.clone();
+                        }
 
-                        match command.as_str() {
-                            "smile" => {
-                                send_message(&mut stream, &MessageType::Message(client_addr_clone.clone(), "😊".to_string()))
-                                    .unwrap();
-                            }
-                            "laugh" => {
-                                send_message(&mut stream, &MessageType::Message(client_addr_clone.clone(), "😂".to_string()))
-                                    .unwrap();
-                            }
-                            "thumbs_up" => {
-                                send_message(&mut stream, &MessageType::Message(client_addr_clone.clone(), "👍".to_string()))
-                                    .unwrap();
-                            }
-                            _ => {}
+                        info!(
+                            "{} has entered the chat with the pseudonym '{}'",
+                            client_addr_clone, pseudonym
+                        );
+
+                        // Notify all existing clients about the new client
+                        let join_message = format!("{} has entered the chat.", pseudonym);
+                        for (existing_client, _, _) in &mut *clients {
+                            send_message(existing_client, &MessageType::Info(join_message.clone()))
+                                .unwrap();
                         }
                     }
                     _ => {}
@@ -234,7 +237,9 @@ fn receive_message(stream: &mut TcpStream) -> Result<MessageType, Box<dyn std::e
 pub fn run_client(
     stream: &mut TcpStream,
     message_vector: Arc<Mutex<Vec<MessageType>>>,
+    pseudonym: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    send_message(stream, &MessageType::Pseudonym(pseudonym))?; // Send the pseudonym to the server
     if let Ok(s) = stream.local_addr() {
         message_vector
             .lock()

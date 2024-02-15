@@ -21,6 +21,8 @@ use crossterm::{
 use ratatui::{prelude::*, widgets::*};
 use tui_textarea::{Input, Key, TextArea};
 
+const MAX_NAME_LENGTH: usize = 10;
+
 /// The main function of the application. It is responsible for parsing the command line arguments and starting the server or client based on the arguments.
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -31,6 +33,8 @@ struct Args {
     /// The IP address of the server to connect to.
     #[arg(short, long, default_value = "")]
     server_ip: String,
+    #[arg(short, long, default_value = "")]
+    pseudonym: String,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -49,11 +53,43 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let message_vector: Arc<Mutex<Vec<MessageType>>> = Arc::new(Mutex::new(Vec::new()));
     let message_vector_clone = Arc::clone(&message_vector);
 
+    let pseudonym = if args.pseudonym.is_empty() || args.pseudonym.len() > MAX_NAME_LENGTH {
+        if args.pseudonym.len() > MAX_NAME_LENGTH {
+            println!("Pseudonym too long (currently {} chars). Please enter a pseudonym with less than {} characters", args.pseudonym.len(), MAX_NAME_LENGTH);
+        }
+        let mut pseudonym = String::new();
+
+        loop {
+            print!("Enter your pseudonym (0 <= size <= {}): ", MAX_NAME_LENGTH);
+            io::Write::flush(&mut io::stdout())?;
+            io::stdin().read_line(&mut pseudonym)?;
+            pseudonym = pseudonym.trim().to_string();
+
+            if pseudonym.len() > MAX_NAME_LENGTH {
+                println!("Pseudonym too long (currently {} chars). Please enter a pseudonym with less than {} characters", pseudonym.len(), MAX_NAME_LENGTH);
+                pseudonym = String::new();
+                continue;
+            } else if pseudonym.is_empty() {
+                println!("Pseudonym cannot be empty. Please enter a pseudonym");
+                pseudonym = String::new();
+                continue;
+            } else {
+                break;
+            }
+        }
+
+        pseudonym
+    } else {
+        args.pseudonym
+    };
+
     let server_ip = args.server_ip;
     let mut stream = TcpStream::connect(server_ip)?;
     let mut stream_clone = stream.try_clone()?;
+
+    let pseduonym_clone = pseudonym.clone();
     std::thread::spawn(move || {
-        run_client(&mut stream, message_vector_clone).unwrap();
+        run_client(&mut stream, message_vector_clone, pseudonym.clone()).unwrap();
     });
 
     enable_raw_mode()?;
@@ -73,6 +109,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &mut text_area,
             &mut stream_clone,
             &mut scroll,
+            pseduonym_clone.clone(),
         )?;
     }
 
@@ -93,6 +130,7 @@ fn handle_events(
     text_area: &mut TextArea,
     stream: &mut TcpStream,
     scroll: &mut u16,
+    pseudonym: String,
 ) -> io::Result<bool> {
     let mut message_vector = message_vector.lock().unwrap();
     if event::poll(std::time::Duration::from_millis(50))? {
@@ -101,6 +139,13 @@ fn handle_events(
                 match key.code {
                     KeyCode::Enter => {
                         let message = text_area.lines()[0].clone();
+
+                        let message = message
+                            .trim()
+                            .to_string()
+                            .replace(":smile:", "😊")
+                            .replace(":laugh:", "😂")
+                            .replace(":thumbs_up:", "👍");
 
                         if let Some(prefix) = message.strip_prefix('/') {
                             match prefix {
@@ -112,9 +157,26 @@ fn handle_events(
                                         env!("CARGO_PKG_AUTHORS")
                                     )));
 
-                                    for command in ["help", "quit", "smile", "laugh", "thumbs_up"] {
-                                        message_vector.push(MessageType::Info(format!("> {}\n", command)));
-                                    }
+                                    message_vector.push(MessageType::Info("Commands:".to_string()));
+                                    message_vector.push(MessageType::Info(
+                                        "/help - Display this message".to_string(),
+                                    ));
+                                    message_vector.push(MessageType::Info(
+                                        "/quit - Quit the chat".to_string(),
+                                    ));
+
+                                    message_vector.push(MessageType::Info("".to_string()));
+                                    message_vector
+                                        .push(MessageType::Info("Text formatting:".to_string()));
+                                    message_vector.push(MessageType::Info(
+                                        "Use :smile: to send 😊".to_string(),
+                                    ));
+                                    message_vector.push(MessageType::Info(
+                                        "Use :laugh: to send 😂".to_string(),
+                                    ));
+                                    message_vector.push(MessageType::Info(
+                                        "Use :thumbs_up: to send 👍".to_string(),
+                                    ));
 
                                     message_vector.push(MessageType::Info("".to_string()));
                                 }
@@ -133,13 +195,7 @@ fn handle_events(
                             send_message(stream, &MessageType::Command(prefix.to_string()))?;
                             message_vector.push(MessageType::Command(prefix.to_string()));
                         } else if !message.is_empty() {
-                            send_message(
-                                stream,
-                                &MessageType::Message(
-                                    stream.local_addr().unwrap().to_string(),
-                                    message,
-                                ),
-                            )?;
+                            send_message(stream, &MessageType::Message(pseudonym, message))?;
                         }
 
                         while !text_area.is_empty() {
@@ -192,7 +248,8 @@ fn ui(
                 Span::styled(formatted_leave, Style::default().fg(Color::Yellow))
             }
             MessageType::Message(source, message) => {
-                let formatted_message = format!("({}): {}", source, message);
+                let formatted_message =
+                    format!("{:^width$}: {}", source, message, width = MAX_NAME_LENGTH);
                 Span::styled(formatted_message, Style::default().fg(Color::White))
             }
             MessageType::Error(error) => {
