@@ -42,7 +42,7 @@ You will be prompted to enter a pseudonym. Alternatively, you can set the pseudo
 lan-chat -s <server-ip> -p <pseudonym>
 ```
 
-4. To insert emojis in the chat, use the following format: `:<emoji name>:`. For example is you type `That's funny :laugh:` it will be rendered as `That's funny 😂`.
+4. To insert emojis in the chat, use the following format: `:<emoji name>:`. For example is you type `That's funny :laughing:` it will be rendered as `That's funny 😂`.
 
 The supported emojis are as follows
 | Command     | Emoji |
