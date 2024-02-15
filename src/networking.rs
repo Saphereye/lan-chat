@@ -14,7 +14,7 @@ lazy_static! {
         "Type /help in the chat".to_string(),
         "Use arrow keys to see chat history".to_string(),
         "Type /quit to leave program".to_string(),
-        "Use :smile: to insert a smiley, try :laugh: and :thumbs_up: too ;".to_string(),
+        "Use :smile: to insert a smiley, try :laughing: and :thumbsup: too. Look at 'gemoji' to learn more.".to_string(),
     ]);
 }
 

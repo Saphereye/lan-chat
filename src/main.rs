@@ -13,6 +13,40 @@ use networking::*;
 use std::io::{self, stdout};
 use std::net::TcpStream;
 use std::sync::{Arc, Mutex};
+use emojis;
+
+fn replace_keywords_with_emojis(text: &str) -> String {
+    let mut output = String::new();
+    let mut current_word = String::new();
+    let mut inside_keyword = false;
+
+    for ch in text.chars() {
+        match ch {
+            ':' => {
+                if inside_keyword {
+                    if let Some(emoji) = emojis::get_by_shortcode(&current_word) {
+                        output.push_str(emoji.as_str());
+                    } else {
+                        output.push(':');
+                        output.push_str(&current_word);
+                        output.push(':');
+                    }
+                    current_word.clear();
+                }
+                inside_keyword = !inside_keyword;
+            },
+            _ => {
+                if inside_keyword {
+                    current_word.push(ch);
+                } else {
+                    output.push(ch);
+                }
+            },
+        }
+    }
+
+    output
+}
 
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
@@ -47,7 +81,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if args.server_ip.is_empty() {
-        return Err("Please provide a server IP address or start as server. Try lan-chat --help for more info.".into());
+        println!("Please provide a server IP address or start as server. Try lan-chat --help for more info");
+        std::process::exit(1);
     }
 
     let message_vector: Arc<Mutex<Vec<MessageType>>> = Arc::new(Mutex::new(Vec::new()));
@@ -142,10 +177,8 @@ fn handle_events(
 
                         let message = message
                             .trim()
-                            .to_string()
-                            .replace(":smile:", "😊")
-                            .replace(":laugh:", "😂")
-                            .replace(":thumbs_up:", "👍");
+                            .to_string();
+                        let message = replace_keywords_with_emojis(&message);
 
                         if let Some(prefix) = message.strip_prefix('/') {
                             match prefix {
@@ -166,16 +199,8 @@ fn handle_events(
                                     ));
 
                                     message_vector.push(MessageType::Info("".to_string()));
-                                    message_vector
-                                        .push(MessageType::Info("Text formatting:".to_string()));
                                     message_vector.push(MessageType::Info(
-                                        "Use :smile: to send 😊".to_string(),
-                                    ));
-                                    message_vector.push(MessageType::Info(
-                                        "Use :laugh: to send 😂".to_string(),
-                                    ));
-                                    message_vector.push(MessageType::Info(
-                                        "Use :thumbs_up: to send 👍".to_string(),
+                                        "To put emojis use this format, e.g. :smile: to send 😊".to_string(),
                                     ));
 
                                     message_vector.push(MessageType::Info("".to_string()));
