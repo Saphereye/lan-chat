@@ -7,7 +7,7 @@ Lan Chat is a terminal-based chat application featuring a user-friendly terminal
 To install Lan Chat, use the following command:
 
 ```bash
-cargo install lan-chat
+cargo install lan-chat --locked
 ```
 
 This will install the binary. For usage instructions, refer to the [Usage](#usage) section.
