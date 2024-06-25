@@ -65,7 +65,7 @@ struct Args {
     is_server: bool,
     /// The IP address of the target server.
     #[arg(short, long)]
-    server_ip: String,
+    server_ip: Option<String>,
     /// The pseudonym of the user.
     #[arg(short, long)]
     pseudonym: Option<String>,
@@ -78,11 +78,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if args.is_server {
         run_server(get_local_ip()?.as_str())?;
         return Ok(());
-    }
-
-    if args.server_ip.is_empty() {
-        println!("Please provide a server IP address or start as server. Try lan-chat --help for more info");
-        std::process::exit(1);
     }
 
     let message_vector: Arc<Mutex<Vec<MessageType>>> = Arc::new(Mutex::new(Vec::new()));
@@ -116,7 +111,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    let server_ip = args.server_ip;
+    let server_ip = match args.server_ip {
+        Some(server_ip) => server_ip,
+        None => {
+            println!("Please provide a target server IP address to connect to it. Try lan-chat --help for more info");
+            std::process::exit(1);
+        }
+    };
+
     let mut stream = TcpStream::connect(server_ip)?;
     let mut stream_clone = stream.try_clone()?;
 
