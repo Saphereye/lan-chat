@@ -13,7 +13,6 @@ use networking::*;
 use std::io::{self, stdout};
 use std::net::TcpStream;
 use std::sync::{Arc, Mutex};
-use emojis;
 
 fn replace_keywords_with_emojis(text: &str) -> String {
     let mut output = String::new();
@@ -34,14 +33,14 @@ fn replace_keywords_with_emojis(text: &str) -> String {
                     current_word.clear();
                 }
                 inside_keyword = !inside_keyword;
-            },
+            }
             _ => {
                 if inside_keyword {
                     current_word.push(ch);
                 } else {
                     output.push(ch);
                 }
-            },
+            }
         }
     }
 
@@ -67,7 +66,7 @@ struct Args {
     /// The IP address of the server to connect to.
     #[arg(short, long, default_value = "")]
     server_ip: String,
-    #[arg(short, long, default_value = "")]
+    #[arg(short, long, default_value = "[blank]")]
     pseudonym: String,
 }
 
@@ -139,13 +138,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut should_quit = false;
     while !should_quit {
         terminal.draw(|f| ui(f, Arc::clone(&message_vector), &mut text_area, &mut scroll))?;
-        should_quit = handle_events(
+        should_quit = match handle_events(
             Arc::clone(&message_vector),
             &mut text_area,
             &mut stream_clone,
             &mut scroll,
             pseduonym_clone.clone(),
-        )?;
+        ) {
+            Ok(should_quit) => should_quit,
+            Err(e) => {
+                message_vector
+                    .lock()
+                    .unwrap()
+                    .push(MessageType::Error(e.to_string()));
+                false
+            }
+        }
     }
 
     disable_raw_mode()?;
@@ -175,13 +183,12 @@ fn handle_events(
                     KeyCode::Enter => {
                         let message = text_area.lines()[0].clone();
 
-                        let message = message
-                            .trim()
-                            .to_string();
+                        let message = message.trim().to_string();
                         let message = replace_keywords_with_emojis(&message);
 
                         if let Some(prefix) = message.strip_prefix('/') {
-                            match prefix {
+                            let args: Vec<&str> = prefix.split_whitespace().collect();
+                            match args[0] {
                                 "help" => {
                                     message_vector.push(MessageType::Info("".to_string()));
                                     message_vector.push(MessageType::Info(format!(
@@ -197,10 +204,17 @@ fn handle_events(
                                     message_vector.push(MessageType::Info(
                                         "/quit - Quit the chat".to_string(),
                                     ));
+                                    message_vector.push(MessageType::Info(
+                                        "/file <file path> - Send file at file path".to_string(),
+                                    ));
+                                    message_vector.push(MessageType::Info(
+                                        "/image <file path> - Send image at file path".to_string(),
+                                    ));
 
                                     message_vector.push(MessageType::Info("".to_string()));
                                     message_vector.push(MessageType::Info(
-                                        "To put emojis use this format, e.g. :smile: to send 😊".to_string(),
+                                        "To put emojis use the ':description:' format, e.g. use :smile: to send 😊"
+                                            .to_string(),
                                     ));
 
                                     message_vector.push(MessageType::Info("".to_string()));
@@ -214,19 +228,69 @@ fn handle_events(
                                     )?;
                                     return Ok(true);
                                 }
-                                _ => {}
+                                "file" => {
+                                    if let Some(file_path) = args.get(1) {
+                                        match std::fs::read(file_path) {
+                                            Ok(file_contents) => {
+                                                message_vector.push(MessageType::Info(format!(
+                                                    "Sending file : {}",
+                                                    args[1]
+                                                )));
+
+                                                send_message(
+                                                    stream,
+                                                    &MessageType::File(
+                                                        file_path.to_string(),
+                                                        file_contents,
+                                                    ),
+                                                )?;
+                                            }
+                                            Err(e) => {
+                                                // Handle file read error
+                                                message_vector.push(MessageType::Error(format!(
+                                                    "Failed to read file: {}",
+                                                    e
+                                                )));
+                                            }
+                                        }
+                                    } else {
+                                        // Handle case where file path is not provided
+                                        message_vector.push(MessageType::Error(
+                                            "File path not provided".to_string(),
+                                        ));
+                                    }
+                                }
+                                "image" => {
+                                    message_vector.push(MessageType::Error(
+                                        "Image transfer not implemented yet".to_string(),
+                                    ));
+                                }
+                                _ => {
+                                    message_vector.push(MessageType::Error(
+                                        "Invalid command. Type /help for a list of commands"
+                                            .to_string(),
+                                    ));
+                                }
                             }
 
                             send_message(stream, &MessageType::Command(prefix.to_string()))?;
                             message_vector.push(MessageType::Command(prefix.to_string()));
-                        } else if !message.is_empty() {
+
+                            while !text_area.is_empty() {
+                                text_area.delete_char();
+                            }
+
+                            return Ok(false);
+                        }
+
+                        if !message.is_empty() {
                             send_message(stream, &MessageType::Message(pseudonym, message))?;
+                            *scroll = scroll.saturating_add(1);
                         }
 
                         while !text_area.is_empty() {
                             text_area.delete_char();
                         }
-                        *scroll = scroll.saturating_add(1);
                     }
                     KeyCode::Up => {
                         *scroll = scroll.saturating_sub(1);
@@ -279,6 +343,36 @@ fn ui(
             }
             MessageType::Error(error) => {
                 Span::styled(error.clone(), Style::default().fg(Color::Red))
+            }
+            MessageType::File(file_name, file_contents) => {
+                // Extract the file name, ignoring any path components
+                let file_name_only = std::path::Path::new(&file_name)
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("downloaded_file");
+
+                // Attempt to get the current directory
+                match std::env::current_dir() {
+                    Ok(current_dir) => {
+                        let full_path = current_dir.join(file_name_only);
+
+                        // Attempt to write the file_contents to the file in the current directory
+                        match std::fs::write(&full_path, file_contents) {
+                            Ok(_) => {
+                                let formatted_file = format!("Received file: {}", file_name_only);
+                                Span::styled(formatted_file, Style::default().fg(Color::Blue))
+                            }
+                            Err(e) => {
+                                let error_message = format!("Failed to write file: {}", e);
+                                Span::styled(error_message, Style::default().fg(Color::Red))
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        let error_message = format!("Failed to get current directory: {}", e);
+                        Span::styled(error_message, Style::default().fg(Color::Red))
+                    }
+                }
             }
             _ => continue,
         };

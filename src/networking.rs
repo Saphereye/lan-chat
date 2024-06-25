@@ -9,12 +9,18 @@ use log::*;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
+const MAX_MESSAGE_SIZE: usize = 1024;
+
 lazy_static! {
     static ref TIPS: Mutex<Vec<String>> = Mutex::new(vec![
         "Type /help in the chat".to_string(),
         "Use arrow keys to see chat history".to_string(),
         "Type /quit to leave program".to_string(),
         "Use :smile: to insert a smiley, try :laughing: and :thumbsup: too. Look at 'gemoji' to learn more.".to_string(),
+        "If you get 'file received' message, make sure to check your pwd (^ u ^)".to_string(),
+        "Petting a cat increases your life span by 101% ^._.^".to_string(),
+        "If you have any suggestions or feedback, please let us know!".to_string(),
+        "If you have any issues, please report them on the GitHub page.".to_string(),
     ]);
 }
 
@@ -26,12 +32,14 @@ lazy_static! {
 /// Pseudonym is used to initiliaze or update a pseuodonym
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub enum MessageType {
-    Info(String),
-    Leave(String),
+    Info(String),            // Info message by server
+    Leave(String),           // Leaving message
     Message(String, String), // Pseudonym and the message itself
-    Error(String),
-    Command(String), // Not yet implemented
-    Pseudonym(String),
+    Error(String),           // Error message by server
+    Command(String),         // Not yet implemented
+    Pseudonym(String),       // User pseudonym
+    File(String, Vec<u8>),   // File name, file content. This will be downloaded on client
+    Image(String, Vec<u8>),  // Image name, image content. Will be shown in sixel format on client
 }
 
 /// The chat server. Contains a list of clients and can broadcast messages to all of them.
@@ -114,8 +122,8 @@ pub fn get_local_ip() -> io::Result<String> {
 }
 
 /// Runs the server. The server listens for incoming connections and spawns a new thread for each one.
+/// TODO when server is SIGTERM kick all clients and close
 pub fn run_server(server_ip: &str) -> Result<(), Box<dyn std::error::Error>> {
-    // println!("Initializing server");
     let server = Server::new();
 
     // let listener = TcpListener::bind(format!("{server_ip}:0")).unwrap();
@@ -141,7 +149,7 @@ pub fn run_server(server_ip: &str) -> Result<(), Box<dyn std::error::Error>> {
             .add_client(
                 stream.try_clone().unwrap(),
                 client_addr.clone(),
-                "Jotaro Kujo".to_string(),
+                "[blank]".to_string(),
             )
             .unwrap();
         thread::spawn(move || {
@@ -159,7 +167,7 @@ pub fn run_server(server_ip: &str) -> Result<(), Box<dyn std::error::Error>> {
                     }
                     MessageType::Message(_, _) => {
                         if let Err(e) = server.broadcast(&message) {
-                            error!("Failes to broadcast message. Broadcasting error: {}", e);
+                            error!("Failed to broadcast message. Broadcasting error: {}", e);
                             std::process::exit(1);
                         }
                     }
@@ -173,7 +181,7 @@ pub fn run_server(server_ip: &str) -> Result<(), Box<dyn std::error::Error>> {
                         let mut clients = server.clients.lock().unwrap();
                         if let Some(index) = clients.iter().position(|(_, a, _)| a == &client_addr)
                         {
-                            clients[index].2 = pseudonym.clone();
+                            clients[index].2.clone_from(&pseudonym);
                         }
 
                         info!(
@@ -188,15 +196,27 @@ pub fn run_server(server_ip: &str) -> Result<(), Box<dyn std::error::Error>> {
                                 .unwrap();
                         }
                     }
+                    MessageType::File(file_name, file_contents) => {
+                        info!("{} has sent a file: {}", client_addr_clone, file_name);
+                        let mut clients = server.clients.lock().unwrap();
+                        for (client, _, _) in &mut *clients {
+                            if client.peer_addr().unwrap().to_string() == client_addr {
+                                continue;
+                            }
+
+                            send_message(
+                                client,
+                                &MessageType::File(file_name.clone(), file_contents.clone()),
+                            )
+                            .unwrap();
+                        }
+                    }
                     _ => {}
                 }
             }
 
             if let Err(e) = server.remove_client(&client_addr) {
-                error!(
-                    "Failed to remove client: {}. Client removal error: {}",
-                    client_addr, e
-                );
+                error!("Failed to remove client: {}. Reason: {}", client_addr, e);
             };
         });
     }
@@ -208,6 +228,14 @@ pub fn run_server(server_ip: &str) -> Result<(), Box<dyn std::error::Error>> {
 pub fn send_message(stream: &mut TcpStream, message: &MessageType) -> std::io::Result<()> {
     let bytes = bincode::serialize(&message)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+
+    if bytes.len() > MAX_MESSAGE_SIZE && !matches!(message, MessageType::Leave(_)) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "Message is too large to send",
+        ));
+    }
+
     stream.write_all(&bytes)?;
     stream.flush()?;
 
@@ -216,16 +244,19 @@ pub fn send_message(stream: &mut TcpStream, message: &MessageType) -> std::io::R
 
 /// Responsible for receiving a message given stream
 fn receive_message(stream: &mut TcpStream) -> Result<MessageType, Box<dyn std::error::Error>> {
-    let mut buffer = [0; 1024];
+    // BUG Images with larger sizes may give issues
+    let mut buffer = [0; MAX_MESSAGE_SIZE];
     match stream.read(&mut buffer) {
         Ok(_) => {}
         Err(e) => {
-            error!(
-                "Couldn't read from stream properly. Receiving from: {}. Read error: {}",
-                stream.peer_addr().unwrap().to_string(),
-                e
-            );
-            std::process::exit(1)
+            // return nice error
+            return Err(Box::new(e));
+            // error!(
+            //     "Couldn't read from stream properly. Receiving from: {}. Read error: {}",
+            //     stream.peer_addr().unwrap().to_string(),
+            //     e
+            // );
+            // std::process::exit(1)
         }
     }
 
@@ -239,7 +270,19 @@ pub fn run_client(
     message_vector: Arc<Mutex<Vec<MessageType>>>,
     pseudonym: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    send_message(stream, &MessageType::Pseudonym(pseudonym))?; // Send the pseudonym to the server
+    match send_message(stream, &MessageType::Pseudonym(pseudonym)) {
+        Ok(_) => {}
+        Err(e) => {
+            message_vector
+                .lock()
+                .unwrap()
+                .push(MessageType::Error(format!(
+                    "Failed to send pseudonym to server: {}",
+                    e
+                )));
+        }
+    } // Send the pseudonym to the server
+
     if let Ok(s) = stream.local_addr() {
         message_vector
             .lock()
@@ -330,7 +373,9 @@ mod tests {
     }
 
     #[test]
-    fn test_local_ip() {
+    fn test_is_local_ip_ok() {
         assert!(get_local_ip().is_ok());
     }
 }
+
+
