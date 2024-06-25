@@ -60,14 +60,15 @@ const MAX_NAME_LENGTH: usize = 10;
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
-    /// Boolean to indicate if the application should start the server or the client.
+    /// Use to start the application as a server.
     #[arg(short, long)]
     is_server: bool,
-    /// The IP address of the server to connect to.
-    #[arg(short, long, default_value = "")]
+    /// The IP address of the target server.
+    #[arg(short, long)]
     server_ip: String,
-    #[arg(short, long, default_value = "[blank]")]
-    pseudonym: String,
+    /// The pseudonym of the user.
+    #[arg(short, long)]
+    pseudonym: Option<String>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -87,34 +88,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let message_vector: Arc<Mutex<Vec<MessageType>>> = Arc::new(Mutex::new(Vec::new()));
     let message_vector_clone = Arc::clone(&message_vector);
 
-    let pseudonym = if args.pseudonym.is_empty() || args.pseudonym.len() > MAX_NAME_LENGTH {
-        if args.pseudonym.len() > MAX_NAME_LENGTH {
-            println!("Pseudonym too long (currently {} chars). Please enter a pseudonym with less than {} characters", args.pseudonym.len(), MAX_NAME_LENGTH);
-        }
-        let mut pseudonym = String::new();
+    let pseudonym = match args.pseudonym {
+        Some(pseudonym) if (pseudonym.len() <= MAX_NAME_LENGTH && pseudonym.len() > 0) => pseudonym,
+        Some(_) | None => {
+            let mut pseudonym = String::new();
 
-        loop {
-            print!("Enter your pseudonym (0 <= size <= {}): ", MAX_NAME_LENGTH);
-            io::Write::flush(&mut io::stdout())?;
-            io::stdin().read_line(&mut pseudonym)?;
-            pseudonym = pseudonym.trim().to_string();
+            loop {
+                print!("Enter your pseudonym (0 <= size <= {}): ", MAX_NAME_LENGTH);
+                io::Write::flush(&mut io::stdout())?;
+                io::stdin().read_line(&mut pseudonym)?;
+                pseudonym = pseudonym.trim().to_string();
 
-            if pseudonym.len() > MAX_NAME_LENGTH {
-                println!("Pseudonym too long (currently {} chars). Please enter a pseudonym with less than {} characters", pseudonym.len(), MAX_NAME_LENGTH);
-                pseudonym = String::new();
-                continue;
-            } else if pseudonym.is_empty() {
-                println!("Pseudonym cannot be empty. Please enter a pseudonym");
-                pseudonym = String::new();
-                continue;
-            } else {
-                break;
+                if pseudonym.len() > MAX_NAME_LENGTH {
+                    println!("Pseudonym too long (currently {} chars). Please enter a pseudonym with less than {} characters", pseudonym.len(), MAX_NAME_LENGTH);
+                    pseudonym = String::new();
+                    continue;
+                } else if pseudonym.is_empty() {
+                    println!("Pseudonym cannot be empty. Please enter a pseudonym");
+                    pseudonym = String::new();
+                    continue;
+                } else {
+                    break;
+                }
             }
-        }
 
-        pseudonym
-    } else {
-        args.pseudonym
+            pseudonym
+        }
     };
 
     let server_ip = args.server_ip;
