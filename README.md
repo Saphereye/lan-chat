@@ -6,6 +6,8 @@ Lan Chat is a terminal-based chat application featuring a user-friendly terminal
 
 ## Installation
 
+> This requires `cargo` to be installed on your target system. Refer to the [cargo installation guide](https://doc.rust-lang.org/cargo/getting-started/installation.html) if `cargo` is absent on your system.
+
 To install Lan Chat, use the following command:
 
 ```bash
@@ -14,7 +16,7 @@ cargo install lan-chat --locked
 
 This will install the binary. For usage instructions, refer to the [Usage](#usage) section.
 
-Alternatively, you can clone the repository and build it manually using the `cargo build` command. Please note that in this case, you will need to run the executable directly.
+Alternatively, the project can be cloned and built using `cargo`.
 
 ## Usage
 
