@@ -1,6 +1,6 @@
 [package]
 name = "lan-chat"
-version = "0.12.5"
+version = "0.12.6"
 edition = "2021"
 authors = ["Saphereye <adarshdas950@gmail.com>"]
 license = "MIT"
@@ -21,7 +21,7 @@ repository = "https://github.com/Saphereye/lan-chat"
 
 [dependencies]
 crossterm = "0.27.0"
-if-addrs = "0.10.1"
+if-addrs = "0.13.0"
 ratatui = "0.26.0"
 tui-textarea = "0.4.0"
 serde = { version = "1.0", features = ["derive"] }

@@ -1,19 +1,17 @@
-//! A simple chat application.
-//!
-//! The application uses a client-server model where many clients are connected to a single server.
-//! When the user sends a message to server using TCP, its broadcasted to all the connected clients.
-//! The chat application uses a terminal based interface to allow usage even in the absence of a GUI.
+#![doc = include_str!("../README.md")]
 
 use clap::Parser;
 use env_logger::Builder;
-use lan_chat::networking::client::run_client;
-use lan_chat::networking::messaging::MessageType;
-use lan_chat::networking::server::{get_local_ipv4, run_server};
-use lan_chat::tui_handler::{handle_events, ui, MAX_NAME_LENGTH};
+use crate::networking::client::run_client;
+use crate::networking::messaging::MessageType;
+use crate::networking::server::{get_local_ipv4, run_server};
+use crate::tui_handler::{handle_events, ui, MAX_NAME_LENGTH};
 use log::*;
 use std::io::{self, stdout};
 use std::net::TcpStream;
 use std::sync::{Arc, Mutex};
+mod networking;
+mod tui_handler;
 
 use crossterm::{
     event::{DisableMouseCapture, EnableMouseCapture},
@@ -22,8 +20,7 @@ use crossterm::{
 use ratatui::prelude::*;
 use tui_textarea::TextArea;
 
-/// The main function of the application.
-/// It is responsible for parsing the command line arguments and starting the server or client based on the arguments.
+/// Defines the command line arguments used by clap crate.
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {

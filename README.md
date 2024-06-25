@@ -1,5 +1,7 @@
 # Lan Chat ![crates.io](https://img.shields.io/crates/v/lan-chat.svg) ![Build Passing](https://github.com/Saphereye/lan-chat/actions/workflows/rust.yml/badge.svg)
 
+![Running example](https://github.com/Saphereye/lan-chat/blob/main/assets/example.png)
+
 Lan Chat is a terminal-based chat application featuring a user-friendly terminal interface.
 
 ## Installation
@@ -44,7 +46,9 @@ lan-chat -s <server-ip> -p <pseudonym>
 
 4. To insert emojis in the chat, use the following format: `:<emoji name>:`. For example is you type `That's funny :laughing:` it will be rendered as `That's funny 😂`.
 
-The supported emojis are as follows
+The supported emojis are as follows\\
+
+
 | Command     | Emoji |
 |-------------|-------|
 | `:smile:`     | 😊     |
@@ -53,7 +57,3 @@ The supported emojis are as follows
 | `:cry: `      | 😢     |
 
 For all codes please refer to [Emoji Cheat Sheet](https://github.com/ikatyang/emoji-cheat-sheet/tree/master).
-
-## Running Example
-
-![image](https://github.com/Saphereye/lan-chat/assets/59739923/daada2ff-4cf0-4251-8e91-92b867f1c2bc)

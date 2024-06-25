@@ -12,6 +12,7 @@ use tui_textarea::{Input, Key, TextArea};
 
 use crate::networking::messaging::{send_message, MessageType};
 
+/// The maximum length of the name of the user.
 pub const MAX_NAME_LENGTH: usize = 10;
 
 /// Handles the events for the UI. Returns true if the user wants to quit the application.
