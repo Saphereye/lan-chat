@@ -1,3 +1,7 @@
+//! This module contains the networking logic for the chat program.
+//! It contains the server and client logic, as well as the message types that can be sent between them.
+//! Also contains the message sending and receiving logic.
+
 use std::io::{self, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
@@ -9,9 +13,12 @@ use log::*;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
-const MAX_MESSAGE_SIZE: usize = 1024;
+// ? Find a better way to handle this
+/// Message size in bytes
+const MAX_MESSAGE_SIZE: usize = 100_000;
 
 lazy_static! {
+    /// A vector of tips that are displayed to the user when they join the chat.
     static ref TIPS: Mutex<Vec<String>> = Mutex::new(vec![
         "Type /help in the chat".to_string(),
         "Use arrow keys to see chat history".to_string(),
@@ -40,6 +47,7 @@ pub enum MessageType {
     Pseudonym(String),       // User pseudonym
     File(String, Vec<u8>),   // File name, file content. This will be downloaded on client
     Image(String, Vec<u8>),  // Image name, image content. Will be shown in sixel format on client
+    // ? can prolly add an incomplete message, to get message larger than MAX_MESSAGE_SIZE
 }
 
 /// The chat server. Contains a list of clients and can broadcast messages to all of them.
@@ -105,7 +113,8 @@ impl Server {
     }
 }
 
-pub fn get_local_ip() -> io::Result<String> {
+/// Returns the local IPv4 address of the machine.
+pub fn get_local_ipv4() -> io::Result<String> {
     if let Ok(interfaces) = get_if_addrs() {
         for interface in interfaces {
             if !interface.is_loopback() && !interface.addr.is_link_local() {
@@ -117,12 +126,12 @@ pub fn get_local_ip() -> io::Result<String> {
     }
     Err(io::Error::new(
         io::ErrorKind::Other,
-        "Failed to retrieve local IP address.",
+        "Failed to retrieve local IPv4 address.",
     ))
 }
 
+// TODO when server is SIGTERM kick all clients and close
 /// Runs the server. The server listens for incoming connections and spawns a new thread for each one.
-/// TODO when server is SIGTERM kick all clients and close
 pub fn run_server(server_ip: &str) -> Result<(), Box<dyn std::error::Error>> {
     let server = Server::new();
 
@@ -307,6 +316,7 @@ pub fn run_client(
         }
     }
 
+    // Choose a random tip
     let mut rng = rand::thread_rng();
     let index = rng.gen_range(0..TIPS.lock().unwrap().len());
     let tip = TIPS.lock().unwrap()[index].clone();
@@ -374,7 +384,7 @@ mod tests {
 
     #[test]
     fn test_is_local_ip_ok() {
-        assert!(get_local_ip().is_ok());
+        assert!(get_local_ipv4().is_ok());
     }
 }
 

@@ -76,7 +76,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Builder::new().filter(None, LevelFilter::Info).init();
 
     if args.is_server {
-        run_server(get_local_ip()?.as_str())?;
+        run_server(get_local_ipv4()?.as_str())?;
         return Ok(());
     }
 
