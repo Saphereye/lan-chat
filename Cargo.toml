@@ -1,6 +1,6 @@
 [package]
 name = "lan-chat"
-version = "0.12.4"
+version = "0.12.5"
 edition = "2021"
 authors = ["Saphereye <adarshdas950@gmail.com>"]
 license = "MIT"

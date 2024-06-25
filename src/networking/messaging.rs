@@ -53,7 +53,7 @@ pub fn receive_message(stream: &mut TcpStream) -> Result<MessageType, Box<dyn st
         Err(e) => {
             return Err(format!(
                 "Couldn't read from stream properly. Receiving from: {}. Read error: {}",
-                stream.peer_addr().unwrap().to_string(),
+                stream.peer_addr()?,
                 e
             )
             .into());
