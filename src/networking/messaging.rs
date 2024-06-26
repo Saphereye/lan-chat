@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use std::net::TcpStream;
 
-/// Message size in bytes
-pub const MAX_MESSAGE_SIZE: usize = 100_000;
+/// Message size in bytes (max packet size in TCP is 65535 bytes)
+pub const MAX_MESSAGE_SIZE: usize = 65_000;
 
 /// A message that can be sent between clients and the server.
 ///

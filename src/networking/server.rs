@@ -1,5 +1,5 @@
 //! The server module contains the server implementation for the chat application.
-//! 
+//!
 //! It listens for incoming connections and broadcasts messages to all the clients.
 //! and maintains a list of clients from which it can remove them.
 
@@ -162,6 +162,21 @@ pub fn run_server(server_ip: &str) -> Result<(), Box<dyn std::error::Error>> {
                             send_message(
                                 client,
                                 &MessageType::File(file_name.clone(), file_contents.clone()),
+                            )
+                            .unwrap();
+                        }
+                    }
+                    MessageType::Image(image_name, image_contents) => {
+                        info!("{} has sent a image: {}", client_addr_clone, image_name);
+                        let mut clients = server.clients.lock().unwrap();
+                        for (client, _, _) in &mut *clients {
+                            if client.peer_addr().unwrap().to_string() == client_addr {
+                                continue;
+                            }
+
+                            send_message(
+                                client,
+                                &MessageType::Image(image_name.clone(), image_contents.clone()),
                             )
                             .unwrap();
                         }

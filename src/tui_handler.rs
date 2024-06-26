@@ -1,5 +1,5 @@
 //! This module is responsible for handling the user interface of the chat application.
-//! 
+//!
 //! It contains functions to handle events and draw the UI.
 
 use std::io::{self};
@@ -109,9 +109,36 @@ pub fn handle_events(
                                     }
                                 }
                                 "image" => {
-                                    message_vector.push(MessageType::Error(
-                                        "Image transfer not implemented yet".to_string(),
-                                    ));
+                                    if let Some(file_path) = args.get(1) {
+                                        match std::fs::read(file_path) {
+                                            Ok(file_contents) => {
+                                                message_vector.push(MessageType::Info(format!(
+                                                    "Sending image : {}",
+                                                    args[1]
+                                                )));
+
+                                                send_message(
+                                                    stream,
+                                                    &MessageType::Image(
+                                                        file_path.to_string(),
+                                                        file_contents,
+                                                    ),
+                                                )?;
+                                            }
+                                            Err(e) => {
+                                                // Handle file read error
+                                                message_vector.push(MessageType::Error(format!(
+                                                    "Failed to read image: {}",
+                                                    e
+                                                )));
+                                            }
+                                        }
+                                    } else {
+                                        // Handle case where file path is not provided
+                                        message_vector.push(MessageType::Error(
+                                            "Image path not provided".to_string(),
+                                        ));
+                                    }
                                 }
                                 _ => {
                                     message_vector.push(MessageType::Error(
@@ -212,6 +239,36 @@ pub fn ui(
                             }
                             Err(e) => {
                                 let error_message = format!("Failed to write file: {}", e);
+                                Span::styled(error_message, Style::default().fg(Color::Red))
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        let error_message = format!("Failed to get current directory: {}", e);
+                        Span::styled(error_message, Style::default().fg(Color::Red))
+                    }
+                }
+            }
+            MessageType::Image(image_name, image_contents) => {
+                // Extract the image name, ignoring any path components
+                let image_name_only = std::path::Path::new(&image_name)
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("downloaded_image");
+
+                // Attempt to get the current directory
+                match std::env::current_dir() {
+                    Ok(current_dir) => {
+                        let full_path = current_dir.join(image_name_only);
+
+                        // Attempt to write the image_contents to the image in the current directory
+                        match std::fs::write(&full_path, image_contents) {
+                            Ok(_) => {
+                                let formatted_image = format!("Received image: {}", image_name_only);
+                                Span::styled(formatted_image, Style::default().fg(Color::Blue))
+                            }
+                            Err(e) => {
+                                let error_message = format!("Failed to write image: {}", e);
                                 Span::styled(error_message, Style::default().fg(Color::Red))
                             }
                         }
